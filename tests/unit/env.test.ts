@@ -40,3 +40,17 @@ describe('loadEnv: Phase 4 settings', () => {
     ).toThrow(/WEBHOOK_ALLOW_INSECURE must be false/);
   });
 });
+
+describe('loadEnv: Phase 5 settings', () => {
+  it('makes the read replica optional and validates it', () => {
+    expect(loadEnv({}).DATABASE_READ_URL).toBeUndefined();
+    expect(loadEnv({ DATABASE_READ_URL: 'postgres://r@replica:5432/db' }).DATABASE_READ_URL).toContain('replica');
+    expect(() => loadEnv({ DATABASE_READ_URL: 'mysql://x' })).toThrow(/DATABASE_READ_URL/);
+    expect(loadEnv({}).REPLICA_LAG_GRACE_SECONDS).toBe(5);
+  });
+
+  it('enables metrics by default and lets you turn them off', () => {
+    expect(loadEnv({}).METRICS_ENABLED).toBe(true);
+    expect(loadEnv({ METRICS_ENABLED: 'false' }).METRICS_ENABLED).toBe(false);
+  });
+});

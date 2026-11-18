@@ -1,23 +1,67 @@
-# Local stack: Postgres, Redis, RabbitMQ, a one-off migration job, the API and the worker.
-#   docker compose up --build                       # everything
-#   docker compose up -d postgres redis rabbitmq    # just the dependencies, for `npm run dev` / `npm test`
+# The whole production-like stack on one machine:
+#
+#   internet ──► nginx (TLS, load balancer, gateway, image cache) ──► api × 3 ──► postgres (primary)
+#                                                                         │   └──► postgres-replica (reads)
+#                                                                         └──► redis
+#   worker × 2 ──► postgres, rabbitmq          prometheus ──► api, worker ──► grafana
+#
+# Everything:          ./scripts/dev-cert.sh && docker compose up -d --build
+#                      (first create the secrets, see the bottom of this file)
+# Just dependencies:   docker compose up -d redis rabbitmq          (for npm run dev / tests)
+#                      docker compose up -d postgres redis rabbitmq (if you have no local Postgres)
+#
+# Postgres is published on ${POSTGRES_PORT:-5432}. If Postgres already runs on your machine,
+# start the stack with POSTGRES_PORT=5433 so the two don't clash.
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+  REDIS_URL: redis://redis:6379
+  # Secrets are read from files mounted by Docker, never baked into the image.
+  JWT_SECRET_FILE: /run/secrets/jwt_secret
+  ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+
 services:
   postgres:
     image: postgres:16-alpine
+    # wal_level=replica + WAL senders let the replica stream every change.
+    command: ["postgres", "-c", "wal_level=replica", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
     environment:
       POSTGRES_USER: marketplace
-      POSTGRES_PASSWORD: marketplace # local development only; real secrets come in Phase 3
+      POSTGRES_PASSWORD: marketplace # local only; managed databases handle this in Phase 7
       POSTGRES_DB: marketplace
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator-local-only}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/00-init-test-db.sql:ro
+      - ./deploy/postgres/10-replication.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U marketplace -d marketplace"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  postgres-replica:
+    image: postgres:16-alpine
+    user: postgres
+    entrypoint: ["/bin/sh", "/replica-entrypoint.sh"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARY_HOST: postgres
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator-local-only}
+    volumes:
+      - pgreplica:/var/lib/postgresql/data
+      - ./deploy/postgres/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace -d marketplace"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -25,7 +69,7 @@ services:
     # evict least-recently-used keys instead of erroring when memory is full.
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -35,8 +79,8 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     ports:
-      - "5672:5672"
-      - "15672:15672" # management UI: http://localhost:15672 (guest / guest, local only)
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672" # management UI: http://localhost:15672 (guest / guest, local only)
     volumes:
       - rabbitmq:/var/lib/rabbitmq
     healthcheck:
@@ -45,51 +89,58 @@ services:
       timeout: 10s
       retries: 12
 
+  # One-off job: apply migrations on the primary before any app container starts.
+  # (The replica gets the schema through replication.)
   migrate:
     build: .
+    image: ${APP_IMAGE:-marketplace-backend:latest}
     command: ["node", "dist/db/migrateCli.js"]
-    environment:
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+    # Same config as the app: in production mode the config loader insists on real secrets.
+    environment: *app-env
+    secrets: [jwt_secret, encryption_key]
     depends_on:
       postgres:
         condition: service_healthy
 
+  # Stateless, so it scales horizontally: docker compose up -d --scale api=5
+  # No published port: the only way in is through Nginx.
   api:
     build: .
+    image: ${APP_IMAGE:-marketplace-backend:latest}
+    deploy:
+      replicas: 3
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
     environment:
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
-      REDIS_URL: redis://redis:6379
-      LOG_LEVEL: info
-      # Secrets are read from files mounted by Docker, never baked into the image.
-      JWT_SECRET_FILE: /run/secrets/jwt_secret
-      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
-    secrets:
-      - jwt_secret
-      - encryption_key
+      <<: *app-env
+      DATABASE_READ_URL: postgres://marketplace:marketplace@postgres-replica:5432/marketplace
+      TRUST_PROXY: 1 # exactly one proxy (Nginx) in front
+      DB_POOL_MAX: 10 # 3 replicas × 10 = 30 primary connections, well under max_connections (100)
+    secrets: [jwt_secret, encryption_key]
     volumes:
       - uploads:/app/uploads
-    ports:
-      - "3000:3000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      postgres-replica:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
-  # Same image, different command: publishes outbox events, consumes them, sends webhooks,
-  # runs scheduled jobs. Scale it independently: docker compose up --scale worker=3
+  # Same image, different command. Several workers share the queue (competing consumers)
+  # and the outbox (SKIP LOCKED); cron jobs still run once thanks to advisory locks.
   worker:
     build: .
+    image: ${APP_IMAGE:-marketplace-backend:latest}
     command: ["node", "dist/worker.js"]
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
     environment:
-      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+      <<: *app-env
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-      LOG_LEVEL: info
-      JWT_SECRET_FILE: /run/secrets/jwt_secret
-      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
-    secrets:
-      - jwt_secret
-      - encryption_key
+    secrets: [jwt_secret, encryption_key]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
       interval: 30s
@@ -102,10 +153,66 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  nginx:
+    image: nginx:1.28-alpine
+    environment:
+      PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-8443}
+      EDGE_RATE_LIMIT: ${EDGE_RATE_LIMIT:-50}
+      EDGE_RATE_BURST: ${EDGE_RATE_BURST:-100}
+      HSTS_MAX_AGE: ${HSTS_MAX_AGE:-0} # 0 locally (self-signed cert); 63072000 in production
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+      - nginx-cache:/var/cache/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - prometheus:/prometheus
+    depends_on:
+      - api
+      - worker
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin} # local only
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3030}:3000" # http://localhost:3030
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
+  pgreplica:
   uploads:
   rabbitmq:
+  nginx-cache:
+  prometheus:
+  grafana:
 
 # Create these once (they're git-ignored):
 #   mkdir -p secrets && openssl rand -hex 32 > secrets/jwt_secret && openssl rand -hex 32 > secrets/encryption_key

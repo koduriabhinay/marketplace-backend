@@ -1,0 +1,56 @@
+# Alert on symptoms users feel (errors, latency) and on things about to run out
+# (connections, backlog), not on every blip. `for:` avoids paging on a single bad scrape.
+# In production, Alertmanager routes firing alerts to Slack, PagerDuty or email.
+groups:
+  - name: marketplace
+    rules:
+      - alert: ApiInstanceDown
+        expr: up{job=~"api|worker"} == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} instance {{ $labels.instance }} is down"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 5% of API requests are failing with 5xx"
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route!="unmatched"}[5m]))) > 0.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p95 API latency above 500 ms"
+
+      - alert: DbPoolSaturated
+        expr: max by (instance, pool) (db_pool_connections{state="waiting"}) > 0
+        for: 2m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Requests are queueing for a database connection on {{ $labels.instance }}"
+
+      - alert: OutboxBacklogGrowing
+        expr: max(outbox_unpublished_events) > 100
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Order events are not being published (is RabbitMQ or the worker down?)"
+
+      - alert: WebhooksDying
+        expr: increase(webhook_deliveries_total{result="dead"}[1h]) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "Webhook deliveries gave up after all retries in the last hour"
+
+      - alert: ReadReplicaFailing
+        expr: increase(db_replica_reads_total{target="primary_fallback"}[5m]) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Catalog reads are falling back to the primary: check the replica"

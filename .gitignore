@@ -8,3 +8,5 @@ backups/
 uploads/
 secrets/
 dump.rdb
+deploy/nginx/certs/
+.local-ca.crt

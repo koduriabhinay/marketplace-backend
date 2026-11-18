@@ -13,7 +13,7 @@ export function healthRouter(
   checks: ReadinessCheck[],
   isShuttingDown: () => boolean,
   /** Soft dependencies: reported in /ready but never make it fail. */
-  optional?: { ping: () => Promise<void> },
+  optional: ReadinessCheck[] = [],
 ) {
   const router = Router();
 
@@ -37,7 +37,9 @@ export function healthRouter(
       }),
     );
     const ok = results.every((r) => r.ok);
-    const degraded = optional ? [{ name: 'redis', ok: await optional.ping().then(() => true, () => false), required: false }] : [];
+    const degraded = await Promise.all(
+      optional.map(async (c) => ({ name: c.name, ok: await c.check().then(() => true, () => false), required: false })),
+    );
     res
       .status(ok ? 200 : 503)
       .json({ status: ok ? 'ready' : 'not_ready', checks: [...results, ...degraded] });

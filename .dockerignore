@@ -8,3 +8,6 @@ tests
 scripts
 backups
 *.md
+deploy
+secrets
+uploads

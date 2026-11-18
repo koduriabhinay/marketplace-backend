@@ -17,7 +17,16 @@ const redis = env.REDIS_URL
 redis?.on('error', (err) => logger.warn({ err: err.message }, 'Redis error'));
 if (!redis) logger.warn('REDIS_URL not set: using in-process cache and rate limits');
 
-const app = createApp({ pool, redis, isShuttingDown: () => shuttingDown });
+// Optional read replica for catalog reads (Phase 5). Smaller pool: it only serves reads.
+const readPool = env.DATABASE_READ_URL
+  ? createPool({
+      connectionString: env.DATABASE_READ_URL,
+      max: env.DB_POOL_MAX,
+      statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
+    })
+  : undefined;
+
+const app = createApp({ pool, readPool, redis, isShuttingDown: () => shuttingDown });
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Marketplace API listening');
@@ -47,6 +56,7 @@ function shutdown(signal: string) {
   server.close(async (err) => {
     try {
       await pool.end();
+      await readPool?.end();
       await redis?.quit();
     } catch (closeErr) {
       logger.error({ err: closeErr }, 'Error closing connections');

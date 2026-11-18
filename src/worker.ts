@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { env } from './config/env';
 import { createPool } from './db/pool';
+import { registry, trackOutboxBacklog, trackPool } from './observability/metrics';
 import { logger } from './lib/logger';
 import type { MessageBroker } from './messaging/broker';
 import { MemoryBroker } from './messaging/memoryBroker';
@@ -45,6 +46,8 @@ async function main() {
     },
   });
   await worker.start();
+  trackPool('worker', pool);
+  trackOutboxBacklog(pool);
 
   // Tiny health server so the orchestrator can probe the worker like any other service.
   const health = createServer((req, res) => {
@@ -52,6 +55,13 @@ async function main() {
       res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     };
     if (req.url === '/health') return reply(200, { status: 'ok' });
+    if (req.url === '/metrics') {
+      registry.metrics().then(
+        (body) => res.writeHead(200, { 'content-type': registry.contentType }).end(body),
+        () => reply(500, { status: 'error' }),
+      );
+      return;
+    }
     if (req.url === '/ready') {
       if (shuttingDown) return reply(503, { status: 'shutting_down' });
       Promise.all([pool.query('SELECT 1'), broker.check()]).then(

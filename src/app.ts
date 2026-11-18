@@ -8,13 +8,16 @@ import { MemoryCache, RedisCache, type Cache } from './cache/cache';
 import { ListingCache } from './cache/listingCache';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env';
+import { ReplicaRouter } from './db/replicaRouter';
 import { logger } from './lib/logger';
+import { httpMetrics, metricsHandler, trackPool } from './observability/metrics';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { idempotency } from './middleware/idempotency';
 import { createRateLimiter } from './middleware/rateLimit';
 import { requestTimeout } from './middleware/requestTimeout';
 import { createPgRepositories } from './repositories/postgres';
 import { PgImageRepository } from './repositories/postgres/images';
+import { PgListingRepository } from './repositories/postgres/listings';
 import type { Repositories } from './repositories/types';
 import { authRouter } from './routes/auth';
 import { customersRouter } from './routes/customers';
@@ -46,6 +49,11 @@ export interface AppDeps {
   cache?: Cache;
   cacheTtlSeconds?: number;
   allowInsecureWebhooks?: boolean;
+  /** Read replica for the public catalog. Without it, everything reads the primary. */
+  readPool?: Pool;
+  replicaLagGraceSeconds?: number;
+  /** Serve GET /metrics for Prometheus (blocked from the internet by Nginx). */
+  metrics?: boolean;
 }
 
 /**
@@ -58,8 +66,6 @@ export function createApp(deps: AppDeps) {
   const { redis } = deps;
   const readinessChecks = deps.readinessChecks ?? [
     { name: 'postgres', check: async () => void (await deps.pool.query('SELECT 1')) },
-    // Redis is reported but deliberately not required: without it the API still works
-    // (cache misses go to Postgres, rate limits fail open), just slower.
   ];
   const cache = deps.cache ?? (redis ? new RedisCache(redis) : new MemoryCache());
   const listingCache = new ListingCache(cache, deps.cacheTtlSeconds ?? env.CACHE_TTL_SECONDS);
@@ -71,7 +77,15 @@ export function createApp(deps: AppDeps) {
     ...deps.rateLimits,
   };
 
-  const listingService = new ListingService(repos.listings, listingCache);
+  trackPool('primary', deps.pool);
+  if (deps.readPool) trackPool('replica', deps.readPool);
+  const replica = deps.readPool
+    ? {
+        listings: new PgListingRepository(deps.readPool),
+        router: new ReplicaRouter(cache, deps.replicaLagGraceSeconds ?? env.REPLICA_LAG_GRACE_SECONDS),
+      }
+    : undefined;
+  const listingService = new ListingService(repos.listings, listingCache, replica);
   const imageService = new ImageService(new PgImageRepository(deps.pool), storage, listingService);
 
   const app = express();
@@ -90,9 +104,10 @@ export function createApp(deps: AppDeps) {
         res.setHeader('x-request-id', id);
         return id;
       },
-      autoLogging: { ignore: (req) => req.url === '/health' || req.url === '/ready' },
+      autoLogging: { ignore: (req) => ['/health', '/ready', '/metrics'].includes(req.url ?? '') },
     }),
   );
+  app.use(httpMetrics);
   app.use(helmet());
   // CORS: only listed browser origins may call the API from JavaScript. Default: none.
   app.use(
@@ -106,7 +121,14 @@ export function createApp(deps: AppDeps) {
   );
   app.use(express.json({ limit: env.BODY_LIMIT }));
 
-  app.use(healthRouter(readinessChecks, deps.isShuttingDown ?? (() => false), redis && cache));
+  // Redis and the replica are reported in /ready but don't fail it: without them the API
+  // still works (cache misses and catalog reads go to the primary), just slower.
+  const softChecks = [
+    ...(redis ? [{ name: 'redis', check: () => cache.ping() }] : []),
+    ...(deps.readPool ? [{ name: 'replica', check: async () => void (await deps.readPool!.query('SELECT 1')) }] : []),
+  ];
+  app.use(healthRouter(readinessChecks, deps.isShuttingDown ?? (() => false), softChecks));
+  if (deps.metrics ?? env.METRICS_ENABLED) app.get('/metrics', metricsHandler);
 
   const api = express.Router();
   api.use(createRateLimiter({ name: 'api', windowMs: limits.windowMs, limit: limits.max, redis }));
@@ -128,7 +150,7 @@ export function createApp(deps: AppDeps) {
   api.use('/sellers', sellersRouter(new SellerService(repos.sellers), webhooks));
   api.use('/customers', customersRouter(new CustomerService(repos.customers)));
   api.use('/listings', listingsRouter(listingService, imageService, storage.root));
-  api.use('/orders', ordersRouter(new OrderService(repos.orders, listingCache), idempotency(deps.pool)));
+  api.use('/orders', ordersRouter(new OrderService(repos.orders, (ids) => listingService.changed(ids)), idempotency(deps.pool)));
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

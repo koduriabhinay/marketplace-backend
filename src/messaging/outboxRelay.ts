@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { withTransaction } from '../db/pool';
 import { logger } from '../lib/logger';
+import { outboxPublished } from '../observability/metrics';
 import type { MessageBroker } from './broker';
 import type { DomainEvent, EventType } from './events';
 
@@ -64,6 +65,7 @@ export class OutboxRelay {
         );
         published++;
       }
+      outboxPublished.inc(published);
       return published;
     });
   }
