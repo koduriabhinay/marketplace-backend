@@ -14,11 +14,11 @@ export function ListingCard({ listing, index }: { listing: Listing; index: numbe
           ) : listing.stock <= 5 ? (
             <span className="ribbon">Only {listing.stock} left</span>
           ) : null}
+          <p className="price-tag">{formatMoney(listing.priceCents)}</p>
         </div>
         <div className="listing-card-body">
           <span className="catalogue-no">No. {String(index).padStart(2, '0')}</span>
           <h2 className="listing-card-title">{listing.title}</h2>
-          <p className="price-tag">{formatMoney(listing.priceCents)}</p>
         </div>
       </Link>
     </article>

@@ -20,14 +20,30 @@ export function CatalogPage() {
 
   return (
     <section>
-      <header className="masthead">
-        <p className="eyebrow">
-          The shop{data ? ` · ${data.pagination.total} ${data.pagination.total === 1 ? 'piece' : 'pieces'}` : ''}
-        </p>
-        <h1>
-          Good things, <em>from the people</em> who make them.
-        </h1>
-        <p className="lede">Every listing comes straight from an independent seller. Stock is live, checkout is safe to retry.</p>
+      <header className="hero">
+        <div className="hero-copy">
+          <p className="eyebrow">The shop</p>
+          <h1>
+            Market day, <span className="hl">every day.</span>
+          </h1>
+          <p className="lede">
+            Mugs, lamps, prints and other good things, straight from the independent sellers who make them.
+          </p>
+        </div>
+        {data && (
+          <div className="seal" aria-label={`${data.pagination.total} pieces in stock`}>
+            <svg viewBox="0 0 200 200" aria-hidden="true">
+              <defs>
+                <path id="seal-circle" d="M100 100m-78 0a78 78 0 1 1 156 0a78 78 0 1 1-156 0" />
+              </defs>
+              <text>
+                <textPath href="#seal-circle">FRESH STOCK ✦ INDEPENDENT SELLERS ✦ FRESH STOCK ✦ MADE BY PEOPLE ✦</textPath>
+              </text>
+            </svg>
+            <span className="seal-count">{data.pagination.total}</span>
+            <span className="seal-label">pieces</span>
+          </div>
+        )}
       </header>
       {isPending && <Spinner label="Loading products" />}
       <ErrorAlert error={error} />

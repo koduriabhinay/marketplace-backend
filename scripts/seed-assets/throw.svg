@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="8" cy="8" r="3.4" fill="#14163a"/></pattern>
+<filter id="mis" x="-20%" y="-20%" width="140%" height="140%"><feOffset in="SourceAlpha" dx="20" dy="18" result="o"/><feFlood flood-color="#2337c6" result="c"/><feComposite in="c" in2="o" operator="in" result="s"/><feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="800" height="1000" fill="#ffc832"/>
+<circle cx="400" cy="470" r="300" fill="url(#dots)" opacity=".16"/>
+
+<ellipse cx="410" cy="800" rx="230" ry="26" fill="url(#dots)" opacity=".55"/>
+<g filter="url(#mis)">
+    <rect x="210" y="640" width="380" height="150" rx="50" fill="#17a673"/>
+    <rect x="230" y="510" width="350" height="150" rx="50" fill="#f4f1e6"/>
+    <rect x="200" y="380" width="390" height="150" rx="50" fill="#17a673"/>
+    <path d="M250 430h290M250 480h290" stroke="#f4f1e6" stroke-width="12"/>
+    <path d="M280 560h250M280 610h250" stroke="#17a673" stroke-width="12"/>
+    <path d="M260 690h280M260 740h280" stroke="#f4f1e6" stroke-width="12"/>
+    <path d="M596 400h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 414h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 428h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 442h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 456h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 470h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 484h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 498h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/><path d="M596 512h44" stroke="#14163a" stroke-width="6" stroke-linecap="round"/></g>
+</svg>

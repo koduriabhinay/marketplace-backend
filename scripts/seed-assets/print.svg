@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+<defs>
+<pattern id="dots" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="8" cy="8" r="3.4" fill="#14163a"/></pattern>
+<filter id="mis" x="-20%" y="-20%" width="140%" height="140%"><feOffset in="SourceAlpha" dx="20" dy="18" result="o"/><feFlood flood-color="#ff5d73" result="c"/><feComposite in="c" in2="o" operator="in" result="s"/><feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="800" height="1000" fill="#ffc832"/>
+<circle cx="400" cy="470" r="300" fill="url(#dots)" opacity=".16"/>
+
+<ellipse cx="410" cy="800" rx="230" ry="26" fill="url(#dots)" opacity=".55"/>
+<g filter="url(#mis)">
+    <rect x="386" y="180" width="28" height="60" fill="#14163a"/>
+    <rect x="220" y="230" width="360" height="520" fill="#fffdf6"/>
+    <rect x="250" y="260" width="300" height="460" fill="none" stroke="#14163a" stroke-width="6"/>
+    <circle cx="400" cy="400" r="86" fill="#ff5d73"/>
+    <path d="M250 470l80-70 70 60 60-90 90 100v250H250z" fill="#2337c6"/>
+    <rect x="280" y="590" width="240" height="34" fill="#ffc832"/><rect x="280" y="640" width="170" height="34" fill="#fffdf6"/></g>
+</svg>

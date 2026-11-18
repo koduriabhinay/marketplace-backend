@@ -49,11 +49,21 @@ for the API in another terminal), or the full stack at https://localhost:8443.
 
 ## Design notes
 
-The look is a printed catalogue: warm paper and ink, one vermilion accent, Fraunces for
-headlines and Instrument Sans for reading, catalogue numbers on products, a cover spot for
-the first item, and a till-receipt order summary. Products without a photo get their
-initial on a tinted plate, with the tint derived from the title so it's stable everywhere.
-It's all hand-written CSS with tokens in `styles.css` (no framework), with a dark theme.
+The site is styled like a two-colour risograph flyer for a street market, not a template:
+
+- **Palette:** newsprint paper, navy ink, and three flat spot colours (blue, pink, yellow).
+- **Type:** one family, Archivo, at its extremes: wide and black for headlines, regular for
+  reading, with JetBrains Mono for labels. Both are self-hosted.
+- **Print details:** an off-register "second ink" shadow on headlines and on cards when you
+  hover, halftone dots, paper grain, price stickers stuck on at slightly different angles,
+  a rotating stamp with the live product count, and a till-receipt order summary.
+- **Illustrations:** the demo products in `scripts/seed-assets/` are original drawings in
+  the same inks (SVG sources next to the PNGs the seed script uploads). A product without
+  a photo shows its initial on a halftone plate, tinted from its title so it's stable.
+- **Care:** dark theme, reduced-motion support, visible focus rings, and the ticker and
+  stamp are hidden from screen readers.
+
+It is all hand-written CSS with tokens in `web/src/styles.css` (no framework).
 
 ## Try it
 
