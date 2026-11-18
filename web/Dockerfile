@@ -10,5 +10,5 @@ COPY . .
 RUN npm run build
 
 # ---- runtime stage: Nginx (TLS, load balancing, gateway) + the built site ----
-FROM nginx:1.28-alpine
+FROM nginx:1.29-alpine
 COPY --from=build /web/dist /usr/share/nginx/html
