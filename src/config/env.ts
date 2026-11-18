@@ -12,7 +12,7 @@ const DEV_SECRETS = {
 } as const;
 
 /** Secrets can be passed as FOO_FILE=/run/secrets/foo (Docker/Kubernetes secrets). */
-const SECRET_KEYS = ['DATABASE_URL', 'JWT_SECRET', 'ENCRYPTION_KEY'] as const;
+const SECRET_KEYS = ['DATABASE_URL', 'JWT_SECRET', 'ENCRYPTION_KEY', 'REDIS_URL', 'RABBITMQ_URL'] as const;
 
 const csv = z
   .string()
@@ -23,6 +23,19 @@ const csv = z
       .map((v) => v.trim())
       .filter(Boolean),
   );
+
+const bool = z
+  .enum(['true', 'false', '1', '0'])
+  .default('false')
+  .transform((v) => v === 'true' || v === '1');
+
+/** Empty string means "not configured" (handy in .env files). */
+const optionalUrl = (scheme: RegExp, hint: string) =>
+  z
+    .string()
+    .optional()
+    .transform((v) => (v ? v : undefined))
+    .refine((v) => v === undefined || scheme.test(v), hint);
 
 /**
  * All configuration comes from environment variables and is validated once at startup.
@@ -64,6 +77,22 @@ const envSchema = z.object({
 
   UPLOAD_DIR: z.string().default('./uploads'),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+
+  /** Redis for the shared cache and rate-limit counters. Unset: in-process fallbacks. */
+  REDIS_URL: optionalUrl(/^rediss?:\/\//, 'must be a redis:// or rediss:// URL'),
+  REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(500),
+  CACHE_TTL_SECONDS: z.coerce.number().int().min(1).max(86_400).default(60),
+
+  /** RabbitMQ for domain events. Unset: an in-process broker (single process only). */
+  RABBITMQ_URL: optionalUrl(/^amqps?:\/\//, 'must be an amqp:// or amqps:// URL'),
+
+  WORKER_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  OUTBOX_POLL_MS: z.coerce.number().int().positive().default(1_000),
+  WEBHOOK_POLL_MS: z.coerce.number().int().positive().default(2_000),
+  WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(8),
+  /** Allows http:// and private/loopback webhook URLs. Local development and tests only. */
+  WEBHOOK_ALLOW_INSECURE: bool,
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -90,6 +119,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     );
     if (insecure.length) {
       throw new Error(`Invalid environment configuration: ${insecure.join(', ')} must be set in production`);
+    }
+    if (env.WEBHOOK_ALLOW_INSECURE) {
+      throw new Error('Invalid environment configuration: WEBHOOK_ALLOW_INSECURE must be false in production');
     }
   }
   return env;

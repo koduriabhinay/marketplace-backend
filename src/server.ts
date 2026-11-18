@@ -1,3 +1,4 @@
+import { createRedis } from './cache/cache';
 import { env } from './config/env';
 import { createPool } from './db/pool';
 import { logger } from './lib/logger';
@@ -9,7 +10,14 @@ const pool = createPool({
   max: env.DB_POOL_MAX,
   statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
 });
-const app = createApp({ pool, isShuttingDown: () => shuttingDown });
+// Optional: without REDIS_URL the cache and rate limits are per-process (fine for one instance).
+const redis = env.REDIS_URL
+  ? createRedis({ url: env.REDIS_URL, commandTimeoutMs: env.REDIS_COMMAND_TIMEOUT_MS })
+  : undefined;
+redis?.on('error', (err) => logger.warn({ err: err.message }, 'Redis error'));
+if (!redis) logger.warn('REDIS_URL not set: using in-process cache and rate limits');
+
+const app = createApp({ pool, redis, isShuttingDown: () => shuttingDown });
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Marketplace API listening');
@@ -39,8 +47,9 @@ function shutdown(signal: string) {
   server.close(async (err) => {
     try {
       await pool.end();
-    } catch (poolErr) {
-      logger.error({ err: poolErr }, 'Error closing Postgres pool');
+      await redis?.quit();
+    } catch (closeErr) {
+      logger.error({ err: closeErr }, 'Error closing connections');
     }
     if (err) {
       logger.error({ err }, 'Error during shutdown');

@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { withTransaction } from '../../db/pool';
+import { recordOrderEvent } from '../../messaging/events';
 import { ConflictError, InsufficientStockError, NotFoundError, UnprocessableError } from '../../lib/errors';
 import type { CreateOrderInput, ListOrdersQuery, Order } from '../../schemas/order';
 import type { OrderRepository } from '../types';
@@ -105,7 +106,9 @@ export class PgOrderRepository implements OrderRepository {
          SELECT $1, * FROM unnest($2::uuid[], $3::int[], $4::int[])`,
         [id, ids, qtys, prices],
       );
-      return this.findWith(client, id) as Promise<Order>;
+      const order = (await this.findWith(client, id))!;
+      await recordOrderEvent(client, 'order.placed', order);
+      return order;
     });
   }
 
@@ -150,7 +153,9 @@ export class PgOrderRepository implements OrderRepository {
         [id],
       );
       await client.query("UPDATE orders SET status = 'cancelled', updated_at = now() WHERE id = $1", [id]);
-      return this.findWith(client, id) as Promise<Order>;
+      const order = (await this.findWith(client, id))!;
+      await recordOrderEvent(client, 'order.cancelled', order);
+      return order;
     });
   }
 

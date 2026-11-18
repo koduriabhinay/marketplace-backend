@@ -1,15 +1,16 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { authenticate } from '../auth/middleware';
 import { parse } from '../lib/validate';
 import { idParamSchema } from '../schemas/common';
 import { createOrderSchema, listOrdersQuerySchema } from '../schemas/order';
 import type { OrderService } from '../services/orderService';
 
-export function ordersRouter(service: OrderService) {
+export function ordersRouter(service: OrderService, idempotency: RequestHandler) {
   const router = Router();
   router.use(authenticate);
 
-  router.post('/', async (req, res) => {
+  // Checkout is the request clients most need to retry safely: send an Idempotency-Key.
+  router.post('/', idempotency, async (req, res) => {
     const order = await service.place(req.user!, parse(createOrderSchema, req.body));
     res.status(201).location(`${req.baseUrl}/${order.id}`).json({ data: order });
   });

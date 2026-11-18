@@ -9,7 +9,12 @@ export interface ReadinessCheck {
  * /health = liveness: the process is up (a load balancer restarts it if this fails).
  * /ready  = readiness: dependencies are reachable (traffic is withheld until this passes).
  */
-export function healthRouter(checks: ReadinessCheck[], isShuttingDown: () => boolean) {
+export function healthRouter(
+  checks: ReadinessCheck[],
+  isShuttingDown: () => boolean,
+  /** Soft dependencies: reported in /ready but never make it fail. */
+  optional?: { ping: () => Promise<void> },
+) {
   const router = Router();
 
   router.get('/health', (_req, res) => {
@@ -32,7 +37,10 @@ export function healthRouter(checks: ReadinessCheck[], isShuttingDown: () => boo
       }),
     );
     const ok = results.every((r) => r.ok);
-    res.status(ok ? 200 : 503).json({ status: ok ? 'ready' : 'not_ready', checks: results });
+    const degraded = optional ? [{ name: 'redis', ok: await optional.ping().then(() => true, () => false), required: false }] : [];
+    res
+      .status(ok ? 200 : 503)
+      .json({ status: ok ? 'ready' : 'not_ready', checks: [...results, ...degraded] });
   });
 
   return router;

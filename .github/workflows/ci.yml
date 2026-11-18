@@ -26,8 +26,29 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 12
     env:
       TEST_DATABASE_URL: postgres://marketplace:marketplace@localhost:5432/marketplace_test
+      # In CI the Redis and RabbitMQ suites always run against the real services.
+      TEST_REDIS_URL: redis://localhost:6379/15
+      TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

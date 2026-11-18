@@ -11,3 +11,5 @@ process.env.UPLOAD_DIR = path.join(os.tmpdir(), `marketplace-test-uploads-${proc
 // Generous limits so normal tests never trip them; rate-limit tests set their own.
 process.env.RATE_LIMIT_MAX = '100000';
 process.env.AUTH_RATE_LIMIT_MAX = '100000';
+// Webhook tests deliver to a receiver on localhost over plain http.
+process.env.WEBHOOK_ALLOW_INSECURE = 'true';

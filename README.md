@@ -9,23 +9,32 @@ five phases, each adding real-world backend concerns (see `docs/`).
 | 1 | Foundations: API, validation, errors, health checks, tests | Done |
 | 2 | PostgreSQL: migrations, orders, transactions, race conditions | Done |
 | 3 | Auth and security: JWT, roles, 2FA, rate limiting, OWASP | Done |
-| 4 | Async and resilience: Redis, RabbitMQ, retries, idempotency | Next |
-| 5 | Ship and scale: Docker Compose, Nginx, metrics, replicas | Planned |
+| 4 | Async and resilience: Redis, RabbitMQ, retries, idempotency | Done |
+| 5 | Ship and scale: Docker Compose, Nginx, metrics, replicas | Next |
 
 ## Quick start
 
-You need PostgreSQL 16. The easiest way is Docker:
+You need PostgreSQL 16. Redis and RabbitMQ are optional for local development: without
+`REDIS_URL` / `RABBITMQ_URL` the app uses in-process fallbacks. The easiest way is Docker:
 
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d postgres   # Postgres on :5432 with `marketplace` and `marketplace_test` DBs
+docker compose up -d postgres redis rabbitmq   # or just postgres
 npm run migrate                 # create/upgrade tables
-npm run dev                     # http://localhost:3000
+npm run dev                     # API on http://localhost:3000
+npm run dev:worker              # background worker (outbox relay, webhooks, cron jobs)
 npm run check                   # lint + typecheck + tests (uses marketplace_test)
 ```
 
-Or run the whole stack (Postgres, migrations, API) in containers. The API container runs
+To run every suite against real Redis and RabbitMQ, as CI does (fails instead of skipping
+if either service is missing):
+
+```bash
+npm run check:full   # Redis DB 15 and RabbitMQ on localhost by default
+```
+
+Or run the whole stack (Postgres, Redis, RabbitMQ, migrations, API, worker) in containers. The API container runs
 in production mode, so it needs real secrets, passed as Docker secrets:
 
 ```bash
@@ -47,6 +56,12 @@ No Docker? Install Postgres 16 locally (for example `brew install postgresql@16`
 createuser -s marketplace && psql -d postgres -c "ALTER USER marketplace PASSWORD 'marketplace'"
 createdb -O marketplace marketplace && createdb -O marketplace marketplace_test
 ```
+
+Redis without Docker: `brew install redis && brew services start redis`, then set
+`REDIS_URL=redis://localhost:6379` in `.env`. RabbitMQ is easiest in Docker; without it the
+worker uses an in-process broker, which is fine when the API and worker run on one machine
+for development. (Strictly, the API never talks to RabbitMQ: it writes events to Postgres,
+and the worker publishes and consumes them.)
 
 Backups: `npm run db:backup` writes a `pg_dump` file to `backups/`;
 `npm run db:restore -- backups/<file>.dump` restores it.
@@ -85,9 +100,17 @@ Send `Authorization: Bearer <accessToken>` on endpoints marked 🔒. Roles: `cus
 | GET | `/api/v1/listings/:id/images`, `/:imageId` | anyone | |
 | POST | `/api/v1/customers` 🔒 | admin | Customers normally use /auth/register |
 | GET | `/api/v1/customers/:id` 🔒 | that customer, admin | |
-| POST | `/api/v1/orders` 🔒 | customer (own), admin | 409 `INSUFFICIENT_STOCK` |
+| POST | `/api/v1/orders` 🔒 | customer (own), admin | 409 `INSUFFICIENT_STOCK`; send `Idempotency-Key` to retry safely |
 | GET | `/api/v1/orders`, `/:id` 🔒 | customer (own only), admin | |
 | POST | `/api/v1/orders/:id/cancel` 🔒 | customer (own), admin | Returns stock |
+| POST | `/api/v1/sellers/:id/webhooks` 🔒 | that seller, admin | `{ url, events? }` → endpoint + signing secret (shown once) |
+| GET | `/api/v1/sellers/:id/webhooks` 🔒 | that seller, admin | |
+| DELETE | `/api/v1/sellers/:id/webhooks/:webhookId` 🔒 | that seller, admin | |
+| GET | `/api/v1/sellers/:id/webhooks/:webhookId/deliveries` 🔒 | that seller, admin | Delivery log: status, attempts, last error |
+
+Webhooks are `POST`ed as JSON with `webhook-id`, `webhook-timestamp` and
+`webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">` headers. Verify them with
+`verifyWebhook()` in `src/webhooks/signature.ts`. Events: `order.placed`, `order.cancelled`.
 
 Example:
 
@@ -108,20 +131,26 @@ Every error has the same shape:
 ```
 src/
   auth/          passwords, JWTs, TOTP 2FA, encryption, auth middleware, policies
+  cache/         Redis/in-memory cache, listing cache-aside with invalidation
   config/        env loading + validation (fail fast, secrets from files)
   db/            connection pool, transactions, migration runner
-  lib/           logger, error classes, validation helper
-  middleware/    error handler, request timeout, rate limiting
+  lib/           logger, errors, validation, retry/backoff/timeouts, circuit breaker
+  middleware/    error handler, request timeout, rate limiting, idempotency keys
+  messaging/     domain events, transactional outbox relay, RabbitMQ + in-memory brokers
+  webhooks/      endpoint management, fan-out consumer, signed delivery, SSRF checks
+  jobs/          polling loops and cron-style scheduled jobs with a distributed lock
+  worker/        wires the background worker together
   storage/       image storage + file-type sniffing
   schemas/       Zod schemas = request contracts + types
   repositories/  data access interfaces + Postgres implementations
   services/      business rules
   routes/        HTTP layer only
   app.ts         builds the Express app from dependencies
-  server.ts      starts it, timeouts, graceful shutdown
+  server.ts      starts the API, timeouts, graceful shutdown
+  worker.ts      starts the background worker (separate process)
 migrations/      versioned SQL schema changes (001_, 002_, ...)
 scripts/         backup / restore, least-privilege DB roles
 tests/
-  unit/          pure logic (config, SQL builders)
+  unit/          pure logic (config, SQL builders, backoff, circuit breaker, signatures)
   integration/   full HTTP requests via Supertest against a real Postgres
 ```
