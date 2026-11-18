@@ -15,7 +15,8 @@
 x-app-env: &app-env
   NODE_ENV: production
   LOG_LEVEL: info
-  DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+  # Passwords default to local-only values; production sets real ones in .env.prod (Phase 7).
+  DATABASE_URL: postgres://marketplace:${POSTGRES_PASSWORD:-marketplace}@postgres:5432/marketplace
   REDIS_URL: redis://redis:6379
   # Secrets are read from files mounted by Docker, never baked into the image.
   JWT_SECRET_FILE: /run/secrets/jwt_secret
@@ -28,7 +29,7 @@ services:
     command: ["postgres", "-c", "wal_level=replica", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10"]
     environment:
       POSTGRES_USER: marketplace
-      POSTGRES_PASSWORD: marketplace # local only; managed databases handle this in Phase 7
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marketplace} # local default; production sets its own
       POSTGRES_DB: marketplace
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator-local-only}
     ports:
@@ -78,6 +79,9 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_UI_PORT:-15672}:15672" # management UI: http://localhost:15672 (guest / guest, local only)
@@ -113,7 +117,7 @@ services:
         limits: { cpus: "0.50", memory: 256M }
     environment:
       <<: *app-env
-      DATABASE_READ_URL: postgres://marketplace:marketplace@postgres-replica:5432/marketplace
+      DATABASE_READ_URL: postgres://marketplace:${POSTGRES_PASSWORD:-marketplace}@postgres-replica:5432/marketplace
       TRUST_PROXY: 1 # exactly one proxy (Nginx) in front
       DB_POOL_MAX: 10 # 3 replicas × 10 = 30 primary connections, well under max_connections (100)
     secrets: [jwt_secret, encryption_key]
@@ -139,7 +143,7 @@ services:
         limits: { cpus: "0.50", memory: 256M }
     environment:
       <<: *app-env
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
     secrets: [jwt_secret, encryption_key]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
@@ -168,6 +172,7 @@ services:
     volumes:
       - ./deploy/nginx/templates:/etc/nginx/templates:ro
       - ./deploy/nginx/certs:/etc/nginx/certs:ro
+      - certbot-www:/var/www/certbot:ro # Let's Encrypt challenge files (Phase 7); empty locally
       - nginx-cache:/var/cache/nginx
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
@@ -213,6 +218,7 @@ volumes:
   uploads:
   rabbitmq:
   nginx-cache:
+  certbot-www:
   prometheus:
   grafana:
 

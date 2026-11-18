@@ -10,3 +10,5 @@ secrets/
 dump.rdb
 deploy/nginx/certs/
 .local-ca.crt
+.env.prod
+.deployed_tag
