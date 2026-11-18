@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { assertCanSeeCustomerResource, isAdmin, resolveCustomerForOrder } from '../auth/policies';
 import type { AuthUser } from '../auth/types';
-import type { ListingCache } from '../cache/listingCache';
 import { PG, pgCode } from '../db/pool';
 import { ForbiddenError, NotFoundError, UnprocessableError } from '../lib/errors';
 import type { OrderRepository } from '../repositories/types';
@@ -10,7 +9,8 @@ import type { CreateOrderRequest, ListOrdersQuery, Order } from '../schemas/orde
 export class OrderService {
   constructor(
     private readonly orders: OrderRepository,
-    private readonly listingCache?: ListingCache,
+    /** Called with the listings whose stock changed (cache + replica bookkeeping). */
+    private readonly onStockChanged?: (listingIds: string[]) => Promise<void>,
   ) {}
 
   async place(user: AuthUser, input: CreateOrderRequest) {
@@ -50,6 +50,6 @@ export class OrderService {
 
   /** Orders change listing stock, so cached listings must be invalidated too. */
   private stockChanged(order: Order) {
-    return this.listingCache?.invalidate(order.items.map((i) => i.listingId));
+    return this.onStockChanged?.(order.items.map((i) => i.listingId));
   }
 }

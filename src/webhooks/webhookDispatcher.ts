@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { decrypt } from '../auth/encryption';
 import { CircuitBreakerRegistry } from '../lib/circuitBreaker';
 import { logger } from '../lib/logger';
+import { webhookDeliveries } from '../observability/metrics';
 import { scheduledBackoffDelay, type BackoffOptions } from '../lib/retry';
 import { signWebhook } from './signature';
 import { assertDeliverableUrl } from './urlSafety';
@@ -84,7 +85,13 @@ export class WebhookDispatcher {
     );
 
     const result: DispatchResult = { succeeded: 0, failed: 0, dead: 0, deferred: 0 };
-    await Promise.all(rows.map(async (d) => void (result[await this.deliver(d)] += 1)));
+    await Promise.all(
+      rows.map(async (d) => {
+        const outcome = await this.deliver(d);
+        result[outcome] += 1;
+        webhookDeliveries.inc({ result: outcome });
+      }),
+    );
     return result;
   }
 

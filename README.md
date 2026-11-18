@@ -2,7 +2,7 @@
 
 A production-style Node.js + TypeScript backend for a small online marketplace: sellers list
 products, customers place orders, and background workers handle fulfillment. It is built in
-five phases, each adding real-world backend concerns (see `docs/`).
+seven phases, each adding real-world backend concerns (see `docs/`).
 
 | Phase | Focus | Status |
 | --- | --- | --- |
@@ -10,7 +10,9 @@ five phases, each adding real-world backend concerns (see `docs/`).
 | 2 | PostgreSQL: migrations, orders, transactions, race conditions | Done |
 | 3 | Auth and security: JWT, roles, 2FA, rate limiting, OWASP | Done |
 | 4 | Async and resilience: Redis, RabbitMQ, retries, idempotency | Done |
-| 5 | Ship and scale: Docker Compose, Nginx, metrics, replicas | Next |
+| 5 | Ship and scale: Nginx, HTTPS, load balancing, metrics, read replicas, CD | Done |
+| 6 | Frontend: React + TypeScript storefront and seller dashboard on this API | Planned |
+| 7 | Deploy: run it on the public internet (cloud host, domain, real TLS) | Planned |
 
 ## Quick start
 
@@ -34,15 +36,31 @@ if either service is missing):
 npm run check:full   # Redis DB 15 and RabbitMQ on localhost by default
 ```
 
-Or run the whole stack (Postgres, Redis, RabbitMQ, migrations, API, worker) in containers. The API container runs
-in production mode, so it needs real secrets, passed as Docker secrets:
+### The full production-like stack
+
+One command runs what production looks like: Nginx (HTTPS, load balancer, gateway, image
+cache) in front of 3 API replicas, 2 workers, a Postgres primary plus a streaming read
+replica, Redis, RabbitMQ, Prometheus and Grafana. The containers run in production mode,
+so they need real secrets (Docker secrets) and a TLS certificate:
 
 ```bash
 mkdir -p secrets
 openssl rand -hex 32 > secrets/jwt_secret
 openssl rand -hex 32 > secrets/encryption_key
-docker compose up --build
+./scripts/dev-cert.sh                       # self-signed cert for https://localhost
+docker compose up -d --build                # add POSTGRES_PORT=5433 if Postgres already runs locally
+NODE_EXTRA_CA_CERTS=deploy/nginx/certs/tls.crt node scripts/smoke.mjs   # end-to-end check
 ```
+
+| URL | What |
+| --- | --- |
+| https://localhost:8443 | The API, through Nginx (http://localhost:8080 redirects here) |
+| http://localhost:3030 | Grafana, dashboard "Marketplace overview" (admin / admin) |
+| http://localhost:9090 | Prometheus: targets, queries, alerts |
+| http://localhost:15672 | RabbitMQ management (guest / guest) |
+
+Scale while it runs: `docker compose up -d --scale api=5 --no-recreate` (Nginx picks up the
+new replicas within 10 s). Stop everything: `docker compose down` (add `-v` to wipe data).
 
 Create the first admin (admins can't self-register):
 
@@ -90,6 +108,7 @@ Send `Authorization: Bearer <accessToken>` on endpoints marked 🔒. Roles: `cus
 | Method | Path | Who | Notes |
 | --- | --- | --- | --- |
 | GET | `/health`, `/ready` | anyone | Liveness / readiness |
+| GET | `/metrics` | Prometheus (internal) | Blocked at Nginx |
 | POST | `/api/v1/sellers` 🔒 | admin | Sellers normally use /auth/register |
 | GET | `/api/v1/sellers`, `/:id` | anyone | Public storefronts |
 | PATCH | `/api/v1/sellers/:id` 🔒 | that seller, admin | |
@@ -133,9 +152,10 @@ src/
   auth/          passwords, JWTs, TOTP 2FA, encryption, auth middleware, policies
   cache/         Redis/in-memory cache, listing cache-aside with invalidation
   config/        env loading + validation (fail fast, secrets from files)
-  db/            connection pool, transactions, migration runner
+  db/            connection pool, transactions, migration runner, read-replica routing
   lib/           logger, errors, validation, retry/backoff/timeouts, circuit breaker
   middleware/    error handler, request timeout, rate limiting, idempotency keys
+  observability/ Prometheus metrics
   messaging/     domain events, transactional outbox relay, RabbitMQ + in-memory brokers
   webhooks/      endpoint management, fan-out consumer, signed delivery, SSRF checks
   jobs/          polling loops and cron-style scheduled jobs with a distributed lock
@@ -149,7 +169,8 @@ src/
   server.ts      starts the API, timeouts, graceful shutdown
   worker.ts      starts the background worker (separate process)
 migrations/      versioned SQL schema changes (001_, 002_, ...)
-scripts/         backup / restore, least-privilege DB roles
+deploy/          Nginx, Postgres replication, Prometheus (+ alerts), Grafana (+ dashboard)
+scripts/         backup / restore, least-privilege DB roles, dev TLS cert, smoke test
 tests/
   unit/          pure logic (config, SQL builders, backoff, circuit breaker, signatures)
   integration/   full HTTP requests via Supertest against a real Postgres

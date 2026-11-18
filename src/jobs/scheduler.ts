@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { logger } from '../lib/logger';
+import { jobRuns } from '../observability/metrics';
 
 export interface ScheduledJob {
   name: string;
@@ -51,12 +52,19 @@ export class Scheduler {
         'SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked',
         [LOCK_NAMESPACE, name],
       );
-      if (!rows[0]!.locked) return { ran: false };
+      if (!rows[0]!.locked) {
+        jobRuns.inc({ job: name, result: 'skipped_locked' });
+        return { ran: false };
+      }
       try {
         const started = Date.now();
         const affected = await job.run(this.pool);
+        jobRuns.inc({ job: name, result: 'ran' });
         logger.info({ job: name, affected, durationMs: Date.now() - started }, 'Scheduled job finished');
         return { ran: true, affected };
+      } catch (err) {
+        jobRuns.inc({ job: name, result: 'failed' });
+        throw err;
       } finally {
         await client.query('SELECT pg_advisory_unlock($1, hashtext($2))', [LOCK_NAMESPACE, name]);
       }

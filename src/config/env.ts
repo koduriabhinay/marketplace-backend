@@ -12,7 +12,14 @@ const DEV_SECRETS = {
 } as const;
 
 /** Secrets can be passed as FOO_FILE=/run/secrets/foo (Docker/Kubernetes secrets). */
-const SECRET_KEYS = ['DATABASE_URL', 'JWT_SECRET', 'ENCRYPTION_KEY', 'REDIS_URL', 'RABBITMQ_URL'] as const;
+const SECRET_KEYS = [
+  'DATABASE_URL',
+  'DATABASE_READ_URL',
+  'JWT_SECRET',
+  'ENCRYPTION_KEY',
+  'REDIS_URL',
+  'RABBITMQ_URL',
+] as const;
 
 const csv = z
   .string()
@@ -56,6 +63,10 @@ const envSchema = z.object({
     .regex(/^postgres(ql)?:\/\//, 'must be a postgres:// connection string')
     .default('postgres://marketplace:marketplace@localhost:5432/marketplace'),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  /** Optional streaming replica for catalog reads. Unset: all reads go to DATABASE_URL. */
+  DATABASE_READ_URL: optionalUrl(/^postgres(ql)?:\/\//, 'must be a postgres:// connection string'),
+  /** After a write, reads of that data skip the replica for this long (replication lag). */
+  REPLICA_LAG_GRACE_SECONDS: z.coerce.number().int().min(0).max(300).default(5),
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters').default(DEV_SECRETS.JWT_SECRET),
@@ -93,6 +104,11 @@ const envSchema = z.object({
   WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(8),
   /** Allows http:// and private/loopback webhook URLs. Local development and tests only. */
   WEBHOOK_ALLOW_INSECURE: bool,
+
+  METRICS_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
 });
 
 export type Env = z.infer<typeof envSchema>;

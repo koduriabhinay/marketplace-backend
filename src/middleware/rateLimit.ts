@@ -1,6 +1,7 @@
 import { rateLimit, type Store } from 'express-rate-limit';
 import type { Redis } from 'ioredis';
 import { RedisStore, type RedisReply } from 'rate-limit-redis';
+import { rateLimited } from '../observability/metrics';
 
 export interface RateLimitOptions {
   /** Unique per limiter: it namespaces the counters in Redis. */
@@ -33,6 +34,7 @@ export function createRateLimiter(opts: RateLimitOptions) {
     store: opts.redis ? redisStore(opts.redis, opts.name) : undefined,
     passOnStoreError: true,
     handler: (req, res, _next, options) => {
+      rateLimited.inc({ limiter: opts.name });
       res.status(options.statusCode).json({
         error: {
           code: 'RATE_LIMITED',

@@ -1,0 +1,122 @@
+# Nginx = reverse proxy + TLS terminator + load balancer + a small API gateway.
+# The official image renders this template with envsubst at startup (only variables that
+# are set in the environment are replaced, so nginx's own $variables are left alone).
+
+# --- Logging: one JSON line per request, with the request ID the API also logs ---------
+log_format json escape=json
+  '{"time":"$time_iso8601","request_id":"$req_id","remote_addr":"$remote_addr",'
+  '"method":"$request_method","uri":"$request_uri","status":$status,'
+  '"bytes":$body_bytes_sent,"request_time":$request_time,'
+  '"upstream":"$upstream_addr","upstream_time":"$upstream_response_time",'
+  '"cache":"$upstream_cache_status","user_agent":"$http_user_agent"}';
+
+# Keep a client/gateway-supplied request ID, otherwise mint one. It is forwarded to the
+# API, which echoes it and puts it in every log line: one ID to grep across all services.
+map $http_x_request_id $req_id {
+  default $http_x_request_id;
+  ""      $request_id;
+}
+
+# --- Gateway protections, applied before a request reaches Node ------------------------
+# A cheap first line of defence at the edge; the API's Redis-backed limits stay the
+# precise per-route ones.
+limit_req_zone  $binary_remote_addr zone=per_ip:10m rate=${EDGE_RATE_LIMIT}r/s;
+limit_conn_zone $binary_remote_addr zone=conn_per_ip:10m;
+limit_req_status  429;
+limit_conn_status 429;
+
+# --- CDN-style cache for listing images ------------------------------------------------
+proxy_cache_path /var/cache/nginx/images levels=1:2 keys_zone=images:10m max_size=500m
+                 inactive=7d use_temp_path=off;
+
+# --- Load balancing ---------------------------------------------------------------------
+# Docker's DNS returns one address per API replica. `resolve` re-resolves every 10 s, so
+# `docker compose up --scale api=5` is picked up without restarting Nginx.
+resolver 127.0.0.11 valid=10s ipv6=off;
+upstream api {
+  zone api_upstream 64k;
+  least_conn;                  # send each request to the replica with the fewest in flight
+  server api:3000 resolve max_fails=3 fail_timeout=10s;
+  keepalive 32;                # reuse connections to Node instead of a TCP handshake per request
+}
+
+server {
+  listen 80;
+  server_name _;
+  access_log /dev/stdout json;
+
+  location = /nginx-health { access_log off; return 200 "ok\n"; }
+  # Everything else moves to HTTPS.
+  location / { return 301 https://$host:${PUBLIC_HTTPS_PORT}$request_uri; }
+}
+
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name _;
+  access_log /dev/stdout json;
+  server_tokens off;
+
+  # TLS terminates here; traffic to the API stays on the private Docker network.
+  ssl_certificate     /etc/nginx/certs/tls.crt;
+  ssl_certificate_key /etc/nginx/certs/tls.key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+  ssl_session_cache shared:TLS:10m;
+  ssl_session_timeout 1d;
+  ssl_session_tickets off;
+
+  # Size and time limits: slow or huge requests are cut off before they tie up Node.
+  client_max_body_size 3m;     # a bit above the API's 2 MB image limit
+  client_body_timeout 10s;
+  client_header_timeout 10s;
+  send_timeout 15s;
+
+  limit_req  zone=per_ip burst=${EDGE_RATE_BURST} nodelay;
+  limit_conn conn_per_ip 50;
+
+  gzip on;
+  gzip_types application/json text/plain;
+  gzip_min_length 1024;
+
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header X-Request-Id $req_id;
+  proxy_connect_timeout 2s;
+  proxy_send_timeout 15s;
+  proxy_read_timeout 15s;
+  # If a replica is down, retry the request on another one. Nginx never retries
+  # non-idempotent requests (POST, PATCH) unless told to, so no double orders.
+  proxy_next_upstream error timeout http_502 http_503;
+  proxy_next_upstream_tries 2;
+
+  # HSTS is set here, not by the app, so local self-signed setups can keep it at 0.
+  # Production: 63072000 (two years). Repeated in each location because add_header in a
+  # location replaces (doesn't add to) the server-level ones.
+  proxy_hide_header Strict-Transport-Security;
+
+  # Internal endpoints are not for the internet. Prometheus scrapes the containers directly.
+  location = /metrics { return 404; }
+
+  # Listing images never change (random IDs), so the edge can keep them for a week and
+  # serve repeats without touching Node. A real CDN (CloudFront, Cloudflare) does the same
+  # thing, just in hundreds of locations close to users.
+  location ~ ^/api/v1/listings/[0-9a-f-]+/images/[0-9a-f-]+$ {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://api;
+    proxy_cache images;
+    proxy_cache_valid 200 7d;
+    proxy_cache_lock on;                                  # one fetch per image on a cold cache
+    proxy_cache_use_stale error timeout updating http_502 http_503;
+    add_header X-Cache-Status $upstream_cache_status always;
+    add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
+  }
+
+  location / {
+    proxy_pass http://api;
+    add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
+  }
+}

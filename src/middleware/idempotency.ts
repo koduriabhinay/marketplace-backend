@@ -3,6 +3,7 @@ import type { RequestHandler } from 'express';
 import type { Pool } from 'pg';
 import { AppError, UnauthorizedError, ValidationError } from '../lib/errors';
 import { logger } from '../lib/logger';
+import { idempotentReplays } from '../observability/metrics';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,255}$/;
 
@@ -77,6 +78,7 @@ export function idempotency(pool: Pool): RequestHandler {
           'This Idempotency-Key was already used for a different request',
         );
       }
+      idempotentReplays.inc();
       res.setHeader('Idempotent-Replayed', 'true');
       if (stored.response_location) res.location(stored.response_location);
       res.status(stored.response_status!).json(stored.response_body);

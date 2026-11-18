@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
+import { cacheRequests } from '../observability/metrics';
 import type { Page } from '../schemas/common';
 import type { Listing, ListListingsQuery } from '../schemas/listing';
 import type { Cache } from './cache';
@@ -50,7 +51,11 @@ export class ListingCache {
 
   private async readThrough<T>(key: string, load: () => Promise<T>): Promise<T> {
     const cached = await this.safely(() => this.cache.get(key));
-    if (cached !== undefined && cached !== null) return JSON.parse(cached) as T;
+    if (cached !== undefined && cached !== null) {
+      cacheRequests.inc({ cache: 'listings', result: 'hit' });
+      return JSON.parse(cached) as T;
+    }
+    cacheRequests.inc({ cache: 'listings', result: cached === undefined ? 'error' : 'miss' });
 
     const pending = this.inFlight.get(key) as Promise<T> | undefined;
     if (pending) return pending;
