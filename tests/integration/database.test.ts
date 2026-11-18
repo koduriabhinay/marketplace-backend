@@ -78,21 +78,30 @@ describe('Database layer', () => {
       expect(await migrate(fresh, (m) => logged.push(m))).toEqual([
         '001_initial_schema.sql',
         '002_auth_and_images.sql',
+        '003_events_webhooks_idempotency.sql',
       ]);
-      expect(logged).toEqual(['applied 001_initial_schema.sql', 'applied 002_auth_and_images.sql']);
+      expect(logged).toEqual([
+        'applied 001_initial_schema.sql',
+        'applied 002_auth_and_images.sql',
+        'applied 003_events_webhooks_idempotency.sql',
+      ]);
       const { rows } = await fresh.query<{ table_name: string }>(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
       );
       expect(rows.map((r) => r.table_name)).toEqual([
         'customers',
+        'idempotency_keys',
         'listing_images',
         'listings',
         'order_items',
         'orders',
+        'outbox_events',
         'refresh_tokens',
         'schema_migrations',
         'sellers',
         'users',
+        'webhook_deliveries',
+        'webhook_endpoints',
       ]);
     } finally {
       await fresh.end();

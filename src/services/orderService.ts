@@ -1,18 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { assertCanSeeCustomerResource, isAdmin, resolveCustomerForOrder } from '../auth/policies';
 import type { AuthUser } from '../auth/types';
+import type { ListingCache } from '../cache/listingCache';
 import { PG, pgCode } from '../db/pool';
 import { ForbiddenError, NotFoundError, UnprocessableError } from '../lib/errors';
 import type { OrderRepository } from '../repositories/types';
-import type { CreateOrderRequest, ListOrdersQuery } from '../schemas/order';
+import type { CreateOrderRequest, ListOrdersQuery, Order } from '../schemas/order';
 
 export class OrderService {
-  constructor(private readonly orders: OrderRepository) {}
+  constructor(
+    private readonly orders: OrderRepository,
+    private readonly listingCache?: ListingCache,
+  ) {}
 
   async place(user: AuthUser, input: CreateOrderRequest) {
     const customerId = resolveCustomerForOrder(user, input.customerId);
     try {
-      return await this.orders.place(randomUUID(), { ...input, customerId });
+      const order = await this.orders.place(randomUUID(), { ...input, customerId });
+      await this.stockChanged(order);
+      return order;
     } catch (err) {
       if (pgCode(err) === PG.FOREIGN_KEY_VIOLATION) {
         throw new UnprocessableError(`Customer ${customerId} does not exist`);
@@ -37,6 +43,13 @@ export class OrderService {
 
   async cancel(user: AuthUser, id: string) {
     await this.get(user, id);
-    return this.orders.cancel(id);
+    const order = await this.orders.cancel(id);
+    await this.stockChanged(order);
+    return order;
+  }
+
+  /** Orders change listing stock, so cached listings must be invalidated too. */
+  private stockChanged(order: Order) {
+    return this.listingCache?.invalidate(order.items.map((i) => i.listingId));
   }
 }

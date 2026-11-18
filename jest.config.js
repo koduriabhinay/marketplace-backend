@@ -8,6 +8,6 @@ module.exports = {
   globalSetup: '<rootDir>/tests/globalSetup.ts',
   // Test files share one database, so they run one at a time.
   maxWorkers: 1,
-  collectCoverageFrom: ['src/**/*.ts', '!src/server.ts', '!src/db/migrateCli.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/server.ts', '!src/worker.ts', '!src/db/migrateCli.ts', '!src/auth/createAdminCli.ts'],
   coverageThreshold: { global: { branches: 80, functions: 90, lines: 90, statements: 90 } },
 };

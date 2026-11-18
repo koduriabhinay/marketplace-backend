@@ -1,6 +1,6 @@
-# Local stack: Postgres, a one-off migration job, and the API.
-#   docker compose up --build        # everything
-#   docker compose up -d postgres    # just the database, for `npm run dev` / `npm test`
+# Local stack: Postgres, Redis, RabbitMQ, a one-off migration job, the API and the worker.
+#   docker compose up --build                       # everything
+#   docker compose up -d postgres redis rabbitmq    # just the dependencies, for `npm run dev` / `npm test`
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,6 +19,32 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    # Cache + rate-limit counters only: losing them is harmless, so no persistence, and
+    # evict least-recently-used keys instead of erroring when memory is full.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI: http://localhost:15672 (guest / guest, local only)
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
   migrate:
     build: .
     command: ["node", "dist/db/migrateCli.js"]
@@ -32,6 +58,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+      REDIS_URL: redis://redis:6379
       LOG_LEVEL: info
       # Secrets are read from files mounted by Docker, never baked into the image.
       JWT_SECRET_FILE: /run/secrets/jwt_secret
@@ -46,10 +73,39 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # Same image, different command: publishes outbox events, consumes them, sends webhooks,
+  # runs scheduled jobs. Scale it independently: docker compose up --scale worker=3
+  worker:
+    build: .
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      LOG_LEVEL: info
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+    secrets:
+      - jwt_secret
+      - encryption_key
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   pgdata:
   uploads:
+  rabbitmq:
 
 # Create these once (they're git-ignored):
 #   mkdir -p secrets && openssl rand -hex 32 > secrets/jwt_secret && openssl rand -hex 32 > secrets/encryption_key
