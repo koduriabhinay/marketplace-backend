@@ -81,6 +81,15 @@ const envSchema = z.object({
     .default(DEV_SECRETS.ENCRYPTION_KEY),
 
   CORS_ORIGINS: csv,
+  /**
+   * Mark the website's refresh-token cookie Secure (HTTPS only). Defaults to on in
+   * production, off elsewhere so the Vite dev server on http://localhost works in every
+   * browser. Production refuses to turn it off.
+   */
+  AUTH_COOKIE_SECURE: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true' || v === '1')),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60_000),
@@ -111,7 +120,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true' || v === '1'),
 });
 
-export type Env = z.infer<typeof envSchema>;
+export type Env = Omit<z.infer<typeof envSchema>, 'AUTH_COOKIE_SECURE'> & { AUTH_COOKIE_SECURE: boolean };
 
 function resolveSecretFiles(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const resolved = { ...source };
@@ -128,7 +137,10 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Invalid environment configuration: ${issues}`);
   }
-  const env = parsed.data;
+  const env = {
+    ...parsed.data,
+    AUTH_COOKIE_SECURE: parsed.data.AUTH_COOKIE_SECURE ?? parsed.data.NODE_ENV === 'production',
+  };
   if (env.NODE_ENV === 'production') {
     const insecure = (Object.keys(DEV_SECRETS) as (keyof typeof DEV_SECRETS)[]).filter(
       (k) => env[k] === DEV_SECRETS[k],
@@ -138,6 +150,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     }
     if (env.WEBHOOK_ALLOW_INSECURE) {
       throw new Error('Invalid environment configuration: WEBHOOK_ALLOW_INSECURE must be false in production');
+    }
+    if (!env.AUTH_COOKIE_SECURE) {
+      throw new Error('Invalid environment configuration: AUTH_COOKIE_SECURE must be true in production');
     }
   }
   return env;

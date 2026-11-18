@@ -79,5 +79,5 @@ export async function createListing(client: Client, seller: Actor, overrides: Re
     .set('Authorization', seller.auth)
     .send({ ...validListing(), ...overrides })
     .expect(201);
-  return res.body.data as { id: string; sellerId: string; stock: number; priceCents: number };
+  return res.body.data as { id: string; sellerId: string; stock: number; priceCents: number; primaryImageUrl: string | null };
 }

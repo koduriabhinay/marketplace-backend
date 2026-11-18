@@ -39,14 +39,16 @@ export class ImageService {
     const id = randomUUID();
     const storageKey = `${id}.${sniffed.ext}`;
     await this.storage.save(storageKey, file.buffer);
+    let image: ListingImage;
     try {
-      return publicImage(
-        await this.images.create({ id, listingId, contentType: sniffed.type, sizeBytes: file.size, storageKey }),
-      );
+      image = await this.images.create({ id, listingId, contentType: sniffed.type, sizeBytes: file.size, storageKey });
     } catch (err) {
       await this.storage.remove(storageKey);
       throw err;
     }
+    // The listing's thumbnail (primaryImageUrl) may have changed: refresh cached copies.
+    await this.listings.changed([listingId]);
+    return publicImage(image);
   }
 
   async list(listingId: string) {
