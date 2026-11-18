@@ -1,9 +1,15 @@
 import { env } from './config/env';
+import { createPool } from './db/pool';
 import { logger } from './lib/logger';
 import { createApp } from './app';
 
 let shuttingDown = false;
-const app = createApp({ isShuttingDown: () => shuttingDown });
+const pool = createPool({
+  connectionString: env.DATABASE_URL,
+  max: env.DB_POOL_MAX,
+  statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
+});
+const app = createApp({ pool, isShuttingDown: () => shuttingDown });
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Marketplace API listening');
@@ -16,7 +22,8 @@ server.keepAliveTimeout = 65_000; // longer than typical load balancer idle time
 
 /**
  * Graceful shutdown: on SIGTERM (Docker/Kubernetes stop) fail readiness, stop accepting
- * new connections, let in-flight requests finish, then exit. Force-exit after a deadline.
+ * new connections, let in-flight requests finish, close the DB pool, then exit.
+ * Force-exit after a deadline.
  */
 function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -29,7 +36,12 @@ function shutdown(signal: string) {
   }, env.SHUTDOWN_TIMEOUT_MS);
   force.unref();
 
-  server.close((err) => {
+  server.close(async (err) => {
+    try {
+      await pool.end();
+    } catch (poolErr) {
+      logger.error({ err: poolErr }, 'Error closing Postgres pool');
+    }
     if (err) {
       logger.error({ err }, 'Error during shutdown');
       process.exit(1);

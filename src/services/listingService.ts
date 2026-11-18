@@ -1,28 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { PG, pgCode } from '../db/pool';
 import { NotFoundError, UnprocessableError } from '../lib/errors';
-import type { ListingRepository, SellerRepository } from '../repositories/types';
+import type { ListingRepository } from '../repositories/types';
 import type { CreateListingInput, ListListingsQuery, UpdateListingInput } from '../schemas/listing';
 
 export class ListingService {
-  constructor(
-    private readonly listings: ListingRepository,
-    private readonly sellers: SellerRepository,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  constructor(private readonly listings: ListingRepository) {}
 
   async create(input: CreateListingInput) {
-    // The body is valid, but it points at a seller that doesn't exist: 422, not 400 or 404.
-    if (!(await this.sellers.findById(input.sellerId))) {
-      throw new UnprocessableError(`Seller ${input.sellerId} does not exist`);
+    try {
+      return await this.listings.create({ id: randomUUID(), ...input });
+    } catch (err) {
+      // The foreign key on seller_id rejects unknown sellers. The body is well-formed but
+      // refers to something that doesn't exist: 422, not 400 or 404.
+      if (pgCode(err) === PG.FOREIGN_KEY_VIOLATION) {
+        throw new UnprocessableError(`Seller ${input.sellerId} does not exist`);
+      }
+      throw err;
     }
-    const ts = this.now().toISOString();
-    return this.listings.create({
-      id: randomUUID(),
-      ...input,
-      createdAt: ts,
-      updatedAt: ts,
-      deletedAt: null,
-    });
   }
 
   async get(id: string) {
@@ -36,15 +31,13 @@ export class ListingService {
   }
 
   async update(id: string, input: UpdateListingInput) {
-    const updated = await this.listings.update(id, { ...input, updatedAt: this.now().toISOString() });
+    const updated = await this.listings.update(id, input);
     if (!updated) throw new NotFoundError('Listing', id);
     return updated;
   }
 
-  /** Soft delete: the row is kept for order history and audits, but hidden from reads. */
+  /** Soft delete: the row stays for order history and audits, but is hidden from reads. */
   async remove(id: string) {
-    const ts = this.now().toISOString();
-    const deleted = await this.listings.update(id, { deletedAt: ts, updatedAt: ts });
-    if (!deleted) throw new NotFoundError('Listing', id);
+    if (!(await this.listings.softDelete(id))) throw new NotFoundError('Listing', id);
   }
 }
