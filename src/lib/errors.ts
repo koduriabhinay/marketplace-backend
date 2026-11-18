@@ -37,3 +37,9 @@ export class UnprocessableError extends AppError {
     super(422, 'UNPROCESSABLE_ENTITY', message);
   }
 }
+
+export class InsufficientStockError extends AppError {
+  constructor(details: { listingId: string; requested: number; available: number }[]) {
+    super(409, 'INSUFFICIENT_STOCK', 'Not enough stock for one or more items', details);
+  }
+}

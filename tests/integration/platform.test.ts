@@ -4,6 +4,7 @@ import { createApp } from '../../src/app';
 import { errorHandler } from '../../src/middleware/errorHandler';
 import { requestTimeout } from '../../src/middleware/requestTimeout';
 import { testClient } from '../helpers';
+import { testPool } from '../db';
 
 describe('Platform behaviour', () => {
   it('serves /health', async () => {
@@ -85,7 +86,12 @@ describe('Platform behaviour', () => {
     expect(res.body.error.code).toBe('REQUEST_TIMEOUT');
   });
 
-  it('builds an app with default dependencies', () => {
-    expect(createApp()).toBeDefined();
+  it('checks Postgres in /ready by default', async () => {
+    const res = await testClient().get('/ready').expect(200);
+    expect(res.body.checks).toEqual([{ name: 'postgres', ok: true }]);
+  });
+
+  it('builds an app from a pool alone', () => {
+    expect(createApp({ pool: testPool() })).toBeDefined();
   });
 });

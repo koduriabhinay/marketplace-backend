@@ -1,21 +1,27 @@
 import { randomUUID } from 'node:crypto';
+import { PG, pgCode } from '../db/pool';
 import { ConflictError, NotFoundError } from '../lib/errors';
 import type { SellerRepository } from '../repositories/types';
 import type { Pagination } from '../schemas/common';
 import type { CreateSellerInput, UpdateSellerInput } from '../schemas/seller';
 
-export class SellerService {
-  constructor(
-    private readonly sellers: SellerRepository,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+const duplicateEmail = () => new ConflictError('A seller with this email already exists');
 
+export class SellerService {
+  constructor(private readonly sellers: SellerRepository) {}
+
+  /**
+   * The unique index is the real guarantee. The pre-check only gives a friendly error in
+   * the common case; two simultaneous signups both pass it, and the loser hits 23505.
+   */
   async create(input: CreateSellerInput) {
-    if (await this.sellers.findByEmail(input.email)) {
-      throw new ConflictError('A seller with this email already exists');
+    if (await this.sellers.findByEmail(input.email)) throw duplicateEmail();
+    try {
+      return await this.sellers.create({ id: randomUUID(), ...input });
+    } catch (err) {
+      if (pgCode(err) === PG.UNIQUE_VIOLATION) throw duplicateEmail();
+      throw err;
     }
-    const ts = this.now().toISOString();
-    return this.sellers.create({ id: randomUUID(), ...input, createdAt: ts, updatedAt: ts });
   }
 
   async get(id: string) {
@@ -29,15 +35,13 @@ export class SellerService {
   }
 
   async update(id: string, input: UpdateSellerInput) {
-    await this.get(id);
-    if (input.email) {
-      const existing = await this.sellers.findByEmail(input.email);
-      if (existing && existing.id !== id) {
-        throw new ConflictError('A seller with this email already exists');
-      }
+    try {
+      const updated = await this.sellers.update(id, input);
+      if (!updated) throw new NotFoundError('Seller', id);
+      return updated;
+    } catch (err) {
+      if (pgCode(err) === PG.UNIQUE_VIOLATION) throw duplicateEmail();
+      throw err;
     }
-    const updated = await this.sellers.update(id, { ...input, updatedAt: this.now().toISOString() });
-    if (!updated) throw new NotFoundError('Seller', id);
-    return updated;
   }
 }

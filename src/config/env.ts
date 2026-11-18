@@ -13,6 +13,12 @@ const envSchema = z.object({
   BODY_LIMIT: z.string().default('100kb'),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  DATABASE_URL: z
+    .string()
+    .regex(/^postgres(ql)?:\/\//, 'must be a postgres:// connection string')
+    .default('postgres://marketplace:marketplace@localhost:5432/marketplace'),
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

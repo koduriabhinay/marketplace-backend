@@ -11,13 +11,19 @@
     "lint": "eslint .",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "check": "npm run lint && npm run typecheck && npm run test:coverage"
+    "check": "npm run lint && npm run typecheck && npm run test:coverage",
+    "migrate": "tsx src/db/migrateCli.ts",
+    "migrate:prod": "node dist/db/migrateCli.js",
+    "db:up": "docker compose up -d postgres",
+    "db:backup": "./scripts/backup.sh",
+    "db:restore": "./scripts/restore.sh"
   },
   "license": "UNLICENSED",
   "dependencies": {
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
     "helmet": "^8.3.0",
+    "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "zod": "^4.6.7"
@@ -27,6 +33,7 @@
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "eslint": "^10.15.0",
     "jest": "^30.5.2",

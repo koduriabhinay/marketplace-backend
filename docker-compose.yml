@@ -1,0 +1,43 @@
+# Local stack: Postgres, a one-off migration job, and the API.
+#   docker compose up --build        # everything
+#   docker compose up -d postgres    # just the database, for `npm run dev` / `npm test`
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: marketplace # local development only; real secrets come in Phase 3
+      POSTGRES_DB: marketplace
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketplace -d marketplace"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    command: ["node", "dist/db/migrateCli.js"]
+    environment:
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
