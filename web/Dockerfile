@@ -2,7 +2,7 @@
 # Node isn't in the final image at all: it's ~50 MB of Nginx plus a few hundred KB of site.
 
 # ---- build stage ----
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /web
 COPY package.json package-lock.json ./
 RUN npm ci
