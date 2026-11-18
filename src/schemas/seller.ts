@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { paginationSchema } from './common';
+import { paginationSchema, safeText } from './common';
 
 export const createSellerSchema = z.strictObject({
-  name: z.string().trim().min(2).max(120),
+  name: safeText(2, 120),
   email: z.email().trim().toLowerCase().max(254),
 });
 

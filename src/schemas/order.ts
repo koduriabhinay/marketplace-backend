@@ -4,7 +4,8 @@ import { paginationSchema } from './common';
 export const ORDER_STATUSES = ['placed', 'cancelled'] as const;
 
 export const createOrderSchema = z.strictObject({
-  customerId: z.uuid(),
+  /** Customers order for themselves; only admins may place an order for another customer. */
+  customerId: z.uuid().optional(),
   items: z
     .array(
       z.strictObject({
@@ -24,7 +25,8 @@ export const listOrdersQuerySchema = paginationSchema.extend({
   status: z.enum(ORDER_STATUSES).optional(),
 });
 
-export type CreateOrderInput = z.infer<typeof createOrderSchema>;
+export type CreateOrderRequest = z.infer<typeof createOrderSchema>;
+export type CreateOrderInput = CreateOrderRequest & { customerId: string };
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
 
 export interface OrderItem {

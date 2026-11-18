@@ -33,6 +33,14 @@ services:
     environment:
       DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/marketplace
       LOG_LEVEL: info
+      # Secrets are read from files mounted by Docker, never baked into the image.
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+    secrets:
+      - jwt_secret
+      - encryption_key
+    volumes:
+      - uploads:/app/uploads
     ports:
       - "3000:3000"
     depends_on:
@@ -41,3 +49,12 @@ services:
 
 volumes:
   pgdata:
+  uploads:
+
+# Create these once (they're git-ignored):
+#   mkdir -p secrets && openssl rand -hex 32 > secrets/jwt_secret && openssl rand -hex 32 > secrets/encryption_key
+secrets:
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  encryption_key:
+    file: ./secrets/encryption_key

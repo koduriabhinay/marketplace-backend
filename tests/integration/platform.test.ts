@@ -36,7 +36,7 @@ describe('Platform behaviour', () => {
 
   it('returns 400 for malformed JSON', async () => {
     const res = await testClient()
-      .post('/api/v1/sellers')
+      .post('/api/v1/auth/login')
       .set('content-type', 'application/json')
       .send('{"name":')
       .expect(400);
@@ -45,8 +45,8 @@ describe('Platform behaviour', () => {
 
   it('returns 413 for oversized bodies', async () => {
     const res = await testClient()
-      .post('/api/v1/sellers')
-      .send({ name: 'x'.repeat(200_000), email: 'a@example.com' })
+      .post('/api/v1/auth/login')
+      .send({ email: 'a@example.com', password: 'x'.repeat(200_000) })
       .expect(413);
     expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
   });
@@ -84,6 +84,18 @@ describe('Platform behaviour', () => {
     });
     const res = await request(app).get('/slow').expect(503);
     expect(res.body.error.code).toBe('REQUEST_TIMEOUT');
+  });
+
+  it('CORS allows only configured origins', async () => {
+    const client = testClient({ corsOrigins: ['https://shop.example.com'] });
+    const allowed = await client
+      .options('/api/v1/listings')
+      .set('Origin', 'https://shop.example.com')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://shop.example.com');
+
+    const blocked = await client.get('/api/v1/listings').set('Origin', 'https://evil.example.com');
+    expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('checks Postgres in /ready by default', async () => {

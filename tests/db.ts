@@ -11,7 +11,7 @@ export function testPool(): Pool {
 
 /** Empties every table so each test starts from a known state. */
 export async function resetDb() {
-  await testPool().query('TRUNCATE order_items, orders, listings, customers, sellers RESTART IDENTITY CASCADE');
+  await testPool().query('TRUNCATE listing_images, refresh_tokens, users, order_items, orders, listings, customers, sellers CASCADE');
 }
 
 export async function closeDb() {

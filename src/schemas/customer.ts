@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { safeText } from './common';
 
 export const createCustomerSchema = z.strictObject({
-  name: z.string().trim().min(2).max(120),
+  name: safeText(2, 120),
   email: z.email().trim().toLowerCase().max(254),
 });
 
