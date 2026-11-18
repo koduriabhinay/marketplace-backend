@@ -98,6 +98,18 @@ and the worker publishes and consumes them.)
 Backups: `npm run db:backup` writes a `pg_dump` file to `backups/`;
 `npm run db:restore -- backups/<file>.dump` restores it.
 
+### On the internet
+
+`docs/PHASE-7.md` is the step-by-step guide: a hardened Ubuntu server, a real certificate
+from Let's Encrypt, nightly backups, and a deploy on every merge to `main`:
+
+```bash
+ssh ubuntu@SERVER_IP 'sudo bash -s' < scripts/server-setup.sh          # once
+DOMAIN=shop.example.com LETSENCRYPT_EMAIL=you@example.com \
+IMAGE_REPO=ghcr.io/<you>/marketplace-backend \
+  ./scripts/deploy-remote.sh deploy@SERVER_IP latest                   # first deploy
+```
+
 ## API (v1)
 
 Send `Authorization: Bearer <accessToken>` on endpoints marked 🔒. Roles: `customer`,
