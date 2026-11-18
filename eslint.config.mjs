@@ -15,7 +15,7 @@ export default tseslint.config(
     // Ops scripts run under plain Node and report to the console.
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', fetch: 'readonly', FormData: 'readonly', Blob: 'readonly', Buffer: 'readonly', setTimeout: 'readonly' },
+      globals: { console: 'readonly', process: 'readonly', fetch: 'readonly', FormData: 'readonly', Blob: 'readonly', Buffer: 'readonly', setTimeout: 'readonly', URL: 'readonly' },
     },
     rules: { 'no-console': 'off' },
   },
