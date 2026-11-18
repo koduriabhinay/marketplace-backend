@@ -49,19 +49,20 @@ for the API in another terminal), or the full stack at https://localhost:8443.
 
 ## Design notes
 
-The site is styled like a two-colour risograph flyer for a street market, not a template:
+The site has one look on every page: a quiet printed catalogue. It blends three ideas.
 
-- **Palette:** newsprint paper, navy ink, and three flat spot colours (blue, pink, yellow).
-- **Type:** one family, Archivo, at its extremes: wide and black for headlines, regular for
-  reading, with JetBrains Mono for labels. Both are self-hosted.
-- **Print details:** an off-register "second ink" shadow on headlines and on cards when you
-  hover, halftone dots, paper grain, price stickers stuck on at slightly different angles,
-  a rotating stamp with the live product count, and a till-receipt order summary.
-- **Illustrations:** the demo products in `scripts/seed-assets/` are original drawings in
-  the same inks (SVG sources next to the PNGs the seed script uploads). A product without
-  a photo shows its initial on a halftone plate, tinted from its title so it's stable.
-- **Care:** dark theme, reduced-motion support, visible focus rings, and the ticker and
-  stamp are hidden from screen readers.
+- **Newspaper masthead:** "The Marketplace" set large in a serif (Playfair Display), with a
+  dateline above it and a double rule below. Page and product titles use the same serif.
+- **Strict grid:** products sit in cells drawn with hairline rules, each numbered
+  (No. 01, No. 02…), with a big count of pieces in stock. One accent colour, red, marks
+  the current page, low stock, errors and hover.
+- **Gallery restraint:** lots of white space, light sans text (Jost), small tracked
+  capitals for labels, square corners. No shadows, gradients or rounded cards.
+- **Details:** orders and the cart summary look like ruled ledgers; a product without a
+  photo shows its initial in italic serif on a pale tile, tinted from its title so it's
+  stable.
+- **Care:** dark theme, reduced-motion support, visible focus rings. Both typefaces are
+  self-hosted.
 
 It is all hand-written CSS with tokens in `web/src/styles.css` (no framework).
 

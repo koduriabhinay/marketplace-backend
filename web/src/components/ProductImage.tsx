@@ -9,7 +9,7 @@ export function tintFor(text: string) {
 
 /**
  * A listing photo. Without one (or if it fails to load) we print the product's initial on a
- * tinted, hatched card, like a catalogue plate waiting for its photograph.
+ * tinted card, like a catalogue plate waiting for its photograph.
  */
 export function ProductImage({ src, alt, className = '' }: { src: string | null; alt: string; className?: string }) {
   const [failed, setFailed] = useState<string | null>(null);

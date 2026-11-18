@@ -41,7 +41,7 @@ test('a seller lists a product with a photo, and a customer buys it and cancels'
 
   // --- Customer -----------------------------------------------------------------------
   await register(page, 'Shop', 'E2E Shopper', `customer-${run}@example.com`);
-  await expect(page.getByRole('heading', { level: 1, name: /Market day/ })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Good things/ })).toBeVisible();
 
   const card = page.getByRole('article').filter({ hasText: title });
   await expect(card).toBeVisible();

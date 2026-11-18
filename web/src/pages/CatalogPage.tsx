@@ -22,26 +22,25 @@ export function CatalogPage() {
     <section>
       <header className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">The shop</p>
+          <p className="eyebrow">Today's edition</p>
           <h1>
-            Market day, <span className="hl">every day.</span>
+            Good things, <span className="hl">plainly sold.</span>
           </h1>
           <p className="lede">
             Mugs, lamps, prints and other good things, straight from the independent sellers who make them.
           </p>
         </div>
         {data && (
-          <div className="seal" aria-label={`${data.pagination.total} pieces in stock`}>
-            <svg viewBox="0 0 200 200" aria-hidden="true">
-              <defs>
-                <path id="seal-circle" d="M100 100m-78 0a78 78 0 1 1 156 0a78 78 0 1 1-156 0" />
-              </defs>
-              <text>
-                <textPath href="#seal-circle">FRESH STOCK ✦ INDEPENDENT SELLERS ✦ FRESH STOCK ✦ MADE BY PEOPLE ✦</textPath>
-              </text>
-            </svg>
-            <span className="seal-count">{data.pagination.total}</span>
-            <span className="seal-label">pieces</span>
+          <div className="tally" aria-label={`${data.pagination.total} pieces in stock`}>
+            <span className="tally-label" aria-hidden="true">
+              In the shop today
+            </span>
+            <span className="tally-count" aria-hidden="true">
+              {String(data.pagination.total).padStart(3, '0')}
+            </span>
+            <span className="tally-label" aria-hidden="true">
+              Pieces · new every week
+            </span>
           </div>
         )}
       </header>

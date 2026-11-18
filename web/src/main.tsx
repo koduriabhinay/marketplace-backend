@@ -8,8 +8,9 @@ import { AuthProvider } from './auth/AuthProvider';
 import { CartProvider } from './cart/CartProvider';
 // Typefaces are bundled and served from our own origin: no third-party font CDN, which
 // keeps the CSP strict (font-src 'self') and doesn't leak visitors to another company.
-import '@fontsource-variable/archivo/wdth.css';
-import '@fontsource-variable/jetbrains-mono/index.css';
+import '@fontsource-variable/playfair-display/wght.css';
+import '@fontsource-variable/playfair-display/wght-italic.css';
+import '@fontsource-variable/jost/wght.css';
 import './styles.css';
 
 const queryClient = new QueryClient({
