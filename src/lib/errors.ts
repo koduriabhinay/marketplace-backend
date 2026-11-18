@@ -43,3 +43,17 @@ export class InsufficientStockError extends AppError {
     super(409, 'INSUFFICIENT_STOCK', 'Not enough stock for one or more items', details);
   }
 }
+
+/** 401: we don't know who you are (missing, invalid or expired credentials). */
+export class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required') {
+    super(401, 'UNAUTHORIZED', message);
+  }
+}
+
+/** 403: we know who you are, and you aren't allowed to do this. */
+export class ForbiddenError extends AppError {
+  constructor(message = 'You do not have permission to do this') {
+    super(403, 'FORBIDDEN', message);
+  }
+}

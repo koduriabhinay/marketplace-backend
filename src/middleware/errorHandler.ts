@@ -22,6 +22,19 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // Upload problems from multer: too big is 413, anything else malformed is 400.
+  if (err instanceof Error && err.name === 'MulterError') {
+    const tooLarge = (err as { code?: string }).code === 'LIMIT_FILE_SIZE';
+    res.status(tooLarge ? 413 : 400).json({
+      error: {
+        code: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'INVALID_UPLOAD',
+        message: tooLarge ? 'File is too large' : err.message,
+        requestId,
+      },
+    });
+    return;
+  }
+
   // Malformed JSON and oversized bodies come from express.json() with a status attached.
   const status = (err as { status?: number; type?: string }).status;
   if (status === 400 || status === 413) {

@@ -1,12 +1,13 @@
 import { z } from 'zod';
-import { paginationSchema } from './common';
+import { paginationSchema, safeText } from './common';
 
 export const LISTING_STATUSES = ['active', 'inactive'] as const;
 
 /** Money is stored as integer cents to avoid floating-point rounding errors. */
 export const createListingSchema = z.strictObject({
-  sellerId: z.uuid(),
-  title: z.string().trim().min(3).max(200),
+  /** Sellers create listings for themselves; only admins may name another seller. */
+  sellerId: z.uuid().optional(),
+  title: safeText(3, 200),
   description: z.string().trim().max(5000).default(''),
   priceCents: z.number().int().min(1).max(100_000_000),
   currency: z.literal('USD').default('USD'),

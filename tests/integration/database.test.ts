@@ -1,7 +1,7 @@
 import { migrate } from '../../src/db/migrate';
 import { createPool, withTransaction } from '../../src/db/pool';
 import { testPool } from '../db';
-import { createSeller, testClient } from '../helpers';
+import { asSeller, createListing, testClient } from '../helpers';
 
 describe('Database layer', () => {
   it('migrations are idempotent: a second run applies nothing', async () => {
@@ -26,10 +26,13 @@ describe('Database layer', () => {
   it('treats SQL injection payloads as plain data', async () => {
     const client = testClient();
     const evil = "Robert'); DROP TABLE sellers; --";
-    const seller = await createSeller(client, { name: evil });
+    const evilEmail = "x'; DROP TABLE users; --@example.com";
+    const seller = await asSeller(client, { name: "Robert O'Brien; DROP TABLE sellers" });
+    await client.post('/api/v1/auth/login').send({ email: evilEmail, password: evil }).expect(400);
+    await client.post('/api/v1/auth/login').send({ email: 'a@example.com', password: evil }).expect(401);
 
-    const res = await client.get(`/api/v1/sellers/${seller.id}`).expect(200);
-    expect(res.body.data.name).toBe(evil);
+    const res = await client.get(`/api/v1/sellers/${seller.sellerId}`).expect(200);
+    expect(res.body.data.name).toBe("Robert O'Brien; DROP TABLE sellers");
     // The table still exists and holds exactly our row.
     const { rows } = await testPool().query('SELECT count(*)::int AS n FROM sellers');
     expect(rows[0].n).toBe(1);
@@ -37,13 +40,10 @@ describe('Database layer', () => {
 
   it('the stock CHECK constraint is a last line of defence against negative stock', async () => {
     const client = testClient();
-    const seller = await createSeller(client);
-    const { body } = await client
-      .post('/api/v1/listings')
-      .send({ sellerId: seller.id, title: 'Lamp', priceCents: 100, stock: 1 })
-      .expect(201);
+    const seller = await asSeller(client);
+    const listing = await createListing(client, seller, { stock: 1 });
     await expect(
-      testPool().query('UPDATE listings SET stock = stock - 2 WHERE id = $1', [body.data.id]),
+      testPool().query('UPDATE listings SET stock = stock - 2 WHERE id = $1', [listing.id]),
     ).rejects.toMatchObject({ code: '23514' });
   });
 
@@ -75,18 +75,24 @@ describe('Database layer', () => {
     const fresh = createPool({ connectionString: url.toString(), max: 2, statementTimeoutMs: 10_000 });
     try {
       const logged: string[] = [];
-      expect(await migrate(fresh, (m) => logged.push(m))).toEqual(['001_initial_schema.sql']);
-      expect(logged).toEqual(['applied 001_initial_schema.sql']);
+      expect(await migrate(fresh, (m) => logged.push(m))).toEqual([
+        '001_initial_schema.sql',
+        '002_auth_and_images.sql',
+      ]);
+      expect(logged).toEqual(['applied 001_initial_schema.sql', 'applied 002_auth_and_images.sql']);
       const { rows } = await fresh.query<{ table_name: string }>(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
       );
       expect(rows.map((r) => r.table_name)).toEqual([
         'customers',
+        'listing_images',
         'listings',
         'order_items',
         'orders',
+        'refresh_tokens',
         'schema_migrations',
         'sellers',
+        'users',
       ]);
     } finally {
       await fresh.end();
