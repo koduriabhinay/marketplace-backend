@@ -27,10 +27,11 @@ npm run dev:worker              # background worker (outbox relay, webhooks, cro
 npm run check                   # lint + typecheck + tests (uses marketplace_test)
 ```
 
-To also run the Redis and RabbitMQ test suites (CI always does):
+To run every suite against real Redis and RabbitMQ, as CI does (fails instead of skipping
+if either service is missing):
 
 ```bash
-TEST_REDIS_URL=redis://localhost:6379/15 TEST_RABBITMQ_URL=amqp://guest:guest@localhost:5672 npm run check
+npm run check:full   # Redis DB 15 and RabbitMQ on localhost by default
 ```
 
 Or run the whole stack (Postgres, Redis, RabbitMQ, migrations, API, worker) in containers. The API container runs

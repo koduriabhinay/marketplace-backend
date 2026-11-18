@@ -14,6 +14,7 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "check": "npm run lint && npm run typecheck && npm run test:coverage",
+    "check:full": "REQUIRE_ALL_SERVICES=1 TEST_REDIS_URL=${TEST_REDIS_URL:-redis://localhost:6379/15} TEST_RABBITMQ_URL=${TEST_RABBITMQ_URL:-amqp://guest:guest@localhost:5672} npm run check",
     "migrate": "tsx src/db/migrateCli.ts",
     "migrate:prod": "node dist/db/migrateCli.js",
     "db:up": "docker compose up -d postgres",

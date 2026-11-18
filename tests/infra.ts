@@ -9,6 +9,12 @@ import { createRedis } from '../src/cache/cache';
 export const TEST_REDIS_URL = process.env.TEST_REDIS_URL;
 export const TEST_RABBITMQ_URL = process.env.TEST_RABBITMQ_URL;
 
+// In CI (and with `npm run check:full`) nothing may be skipped: a missing service is an
+// error, not a silent pass.
+if ((process.env.CI || process.env.REQUIRE_ALL_SERVICES) && (!TEST_REDIS_URL || !TEST_RABBITMQ_URL)) {
+  throw new Error('TEST_REDIS_URL and TEST_RABBITMQ_URL must be set: the Redis and RabbitMQ suites may not be skipped here');
+}
+
 export const describeWithRedis = TEST_REDIS_URL ? describe : describe.skip;
 export const describeWithRabbit = TEST_RABBITMQ_URL ? describe : describe.skip;
 
