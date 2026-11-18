@@ -4,9 +4,10 @@ import { verifyAccessToken } from './tokens';
 import type { Role } from './types';
 
 /**
- * Reads "Authorization: Bearer <token>". Tokens travel in a header, never a cookie, so a
- * malicious site can't make the browser send them automatically: that's what makes the
- * API immune to CSRF by design.
+ * Reads "Authorization: Bearer <token>". Access tokens travel in a header, never a cookie,
+ * so a malicious site can't make the browser send them automatically: that keeps every
+ * API route immune to CSRF by design. (The website's refresh-token cookie is only sent to
+ * /auth/refresh and /auth/logout, which have their own CSRF checks: see auth/cookies.ts.)
  */
 export const authenticate: RequestHandler = (req, _res, next) => {
   const header = req.headers.authorization;

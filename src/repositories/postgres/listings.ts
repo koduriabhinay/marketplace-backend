@@ -15,10 +15,16 @@ interface Row {
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
+  primary_image_id: string | null;
 }
 
-const COLS =
-  'id, seller_id, title, description, price_cents, currency, stock, status, created_at, updated_at, deleted_at';
+/**
+ * The first image's ID comes along with every listing (one indexed lookup per row via
+ * listing_images_listing_idx), so a catalog page shows thumbnails without an extra
+ * request per card (the N+1 problem, moved to the browser).
+ */
+const COLS = `id, seller_id, title, description, price_cents, currency, stock, status, created_at, updated_at, deleted_at,
+  (SELECT i.id FROM listing_images i WHERE i.listing_id = listings.id ORDER BY i.created_at, i.id LIMIT 1) AS primary_image_id`;
 
 const toListing = (r: Row): Listing => ({
   id: r.id,
@@ -29,6 +35,7 @@ const toListing = (r: Row): Listing => ({
   currency: r.currency,
   stock: r.stock,
   status: r.status,
+  primaryImageUrl: r.primary_image_id ? `/api/v1/listings/${r.id}/images/${r.primary_image_id}` : null,
   createdAt: iso(r.created_at)!,
   updatedAt: iso(r.updated_at)!,
   deletedAt: iso(r.deleted_at),

@@ -62,12 +62,33 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
 
+  # The website: lint, typecheck, component tests (Vitest + Testing Library), production build.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+
   # Boots the whole production-like stack (Nginx, 3 API replicas, 2 workers, Postgres
   # primary + replica, Redis, RabbitMQ, Prometheus, Grafana) and tests it end to end over
   # HTTPS, the way a client on the internet would use it.
   e2e:
     runs-on: ubuntu-latest
-    needs: check
+    needs: [check, web]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +107,21 @@ jobs:
         run: node scripts/smoke.mjs
         env:
           NODE_EXTRA_CA_CERTS: deploy/nginx/certs/tls.crt
+      # A real browser clicks through the website served by Nginx: a seller lists a
+      # product with a photo, a customer buys it, reloads (session cookie), and cancels.
+      - name: Install Playwright's Chromium
+        working-directory: web
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Browser end-to-end test
+        working-directory: web
+        run: npx playwright test
+      - name: Upload the Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
       - name: Show logs on failure
         if: failure()
         run: docker compose ps -a && docker compose logs --tail=100
@@ -98,7 +134,7 @@ jobs:
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [check, e2e]
+    needs: [check, web, e2e]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -124,5 +160,21 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      # The website image: Nginx with the built React site inside.
+      - id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-web
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: web
+          push: true
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

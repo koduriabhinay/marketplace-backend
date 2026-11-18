@@ -21,7 +21,7 @@ export interface CustomerRepository {
   findById(id: string): Promise<Customer | null>;
 }
 
-export type NewListing = Omit<Listing, 'createdAt' | 'updatedAt' | 'deletedAt'>;
+export type NewListing = Omit<Listing, 'createdAt' | 'updatedAt' | 'deletedAt' | 'primaryImageUrl'>;
 export type ListingPatch = Partial<
   Pick<Listing, 'title' | 'description' | 'priceCents' | 'currency' | 'stock' | 'status'>
 >;

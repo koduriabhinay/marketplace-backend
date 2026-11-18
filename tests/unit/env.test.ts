@@ -54,3 +54,14 @@ describe('loadEnv: Phase 5 settings', () => {
     expect(loadEnv({ METRICS_ENABLED: 'false' }).METRICS_ENABLED).toBe(false);
   });
 });
+
+describe('loadEnv: Phase 6 settings', () => {
+  const prod = { NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), ENCRYPTION_KEY: 'a'.repeat(64) };
+
+  it('makes the session cookie Secure in production and lets development opt in', () => {
+    expect(loadEnv({}).AUTH_COOKIE_SECURE).toBe(false);
+    expect(loadEnv({ AUTH_COOKIE_SECURE: 'true' }).AUTH_COOKIE_SECURE).toBe(true);
+    expect(loadEnv(prod).AUTH_COOKIE_SECURE).toBe(true);
+    expect(() => loadEnv({ ...prod, AUTH_COOKIE_SECURE: 'false' })).toThrow(/AUTH_COOKIE_SECURE must be true/);
+  });
+});

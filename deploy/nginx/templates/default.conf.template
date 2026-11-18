@@ -1,4 +1,5 @@
-# Nginx = reverse proxy + TLS terminator + load balancer + a small API gateway.
+# Nginx = web server for the React site + reverse proxy + TLS terminator + load balancer
+# + a small API gateway.
 # The official image renders this template with envsubst at startup (only variables that
 # are set in the environment are replaced, so nginx's own $variables are left alone).
 
@@ -76,12 +77,16 @@ server {
   limit_conn conn_per_ip 50;
 
   gzip on;
-  gzip_types application/json text/plain;
+  gzip_types application/json text/plain text/css application/javascript image/svg+xml;
   gzip_min_length 1024;
+
+  # The website: static files built by Vite, baked into this image (web/Dockerfile).
+  root /usr/share/nginx/html;
 
   proxy_http_version 1.1;
   proxy_set_header Connection "";
   proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-Host $http_host;   # host:port as the browser saw it (Origin checks)
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto $scheme;
   proxy_set_header X-Request-Id $req_id;
@@ -115,8 +120,36 @@ server {
     add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
   }
 
-  location / {
+  # The API and its health endpoints.
+  location /api/ {
     proxy_pass http://api;
+    add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
+  }
+  location = /health { proxy_pass http://api; }
+  location = /ready  { proxy_pass http://api; }
+
+  # Vite puts a content hash in every asset name (index-3f9c1a.js), so a file never
+  # changes under the same URL: browsers and CDNs may keep it for a year. A missing asset
+  # is a real 404, not the app shell.
+  location /assets/ {
+    try_files $uri =404;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
+  }
+
+  # Everything else is the single-page app: serve the file if it exists, otherwise
+  # index.html and let React Router pick the page (/listings/…, /seller, …).
+  # index.html itself is never cached, so a deploy is picked up on the next visit.
+  location / {
+    try_files $uri /index.html;
+    add_header Cache-Control "no-cache" always;
+    # Helmet secures the API's responses; the site's headers are set here. The CSP only
+    # allows our own scripts, styles and API, so injected markup can't load or run code.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Strict-Transport-Security "max-age=${HSTS_MAX_AGE}" always;
   }
 }

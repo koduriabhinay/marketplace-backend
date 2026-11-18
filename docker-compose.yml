@@ -1,6 +1,6 @@
 # The whole production-like stack on one machine:
 #
-#   internet ──► nginx (TLS, load balancer, gateway, image cache) ──► api × 3 ──► postgres (primary)
+#   internet ──► nginx (website, TLS, load balancer, gateway, image cache) ──► api × 3 ──► postgres (primary)
 #                                                                         │   └──► postgres-replica (reads)
 #                                                                         └──► redis
 #   worker × 2 ──► postgres, rabbitmq          prometheus ──► api, worker ──► grafana
@@ -153,8 +153,10 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # Nginx with the built React site inside (web/Dockerfile). Open https://localhost:8443
   nginx:
-    image: nginx:1.28-alpine
+    build: ./web
+    image: ${WEB_IMAGE:-marketplace-web:latest}
     environment:
       PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-8443}
       EDGE_RATE_LIMIT: ${EDGE_RATE_LIMIT:-50}

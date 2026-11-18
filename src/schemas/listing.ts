@@ -38,6 +38,8 @@ export interface Listing {
   currency: 'USD';
   stock: number;
   status: (typeof LISTING_STATUSES)[number];
+  /** The first uploaded image, for catalog thumbnails; null when there is none. */
+  primaryImageUrl: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

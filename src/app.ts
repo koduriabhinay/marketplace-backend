@@ -88,6 +88,7 @@ export function createApp(deps: AppDeps) {
   const listingService = new ListingService(repos.listings, listingCache, replica);
   const imageService = new ImageService(new PgImageRepository(deps.pool), storage, listingService);
 
+  const corsOrigins = deps.corsOrigins ?? env.CORS_ORIGINS;
   const app = express();
   app.disable('x-powered-by');
   // Number of proxies in front of us (Nginx in Phase 5). Needed so req.ip is the real
@@ -112,9 +113,9 @@ export function createApp(deps: AppDeps) {
   // CORS: only listed browser origins may call the API from JavaScript. Default: none.
   app.use(
     cors({
-      origin: deps.corsOrigins ?? env.CORS_ORIGINS,
+      origin: corsOrigins,
       methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-      allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id', 'Idempotency-Key'],
+      allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id', 'Idempotency-Key', 'X-Auth-Transport'],
       exposedHeaders: ['X-Request-Id', 'Location', 'RateLimit', 'RateLimit-Policy', 'Retry-After', 'Idempotent-Replayed'],
       maxAge: 600,
     }),
@@ -144,7 +145,7 @@ export function createApp(deps: AppDeps) {
         limit: limits.authMax,
         skipSuccessfulRequests: true,
       }),
-    }),
+    }, corsOrigins),
   );
   const webhooks = new WebhookService(deps.pool, deps.allowInsecureWebhooks ?? env.WEBHOOK_ALLOW_INSECURE);
   api.use('/sellers', sellersRouter(new SellerService(repos.sellers), webhooks));
